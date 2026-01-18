@@ -1,0 +1,85 @@
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use serde_json::Value;
+
+use crate::error::{AgentError, AgentResult};
+use crate::tools::{ApprovalDecision, ApprovalHook, ToolContext, ToolDef, ToolRegistry, ToolResult};
+
+pub struct ToolExecutor {
+    registry: ToolRegistry,
+    approval: Option<Arc<dyn ApprovalHook>>,
+    allowlist: Option<HashSet<String>>,
+    denylist: HashSet<String>,
+}
+
+impl ToolExecutor {
+    pub fn new(registry: ToolRegistry) -> Self {
+        Self {
+            registry,
+            approval: None,
+            allowlist: None,
+            denylist: HashSet::new(),
+        }
+    }
+
+    pub fn with_approval_hook(mut self, hook: Arc<dyn ApprovalHook>) -> Self {
+        self.approval = Some(hook);
+        self
+    }
+
+    pub fn with_allowlist(mut self, tools: impl IntoIterator<Item = String>) -> Self {
+        self.allowlist = Some(tools.into_iter().collect());
+        self
+    }
+
+    pub fn with_denylist(mut self, tools: impl IntoIterator<Item = String>) -> Self {
+        self.denylist = tools.into_iter().collect();
+        self
+    }
+
+    pub fn list(&self) -> Vec<ToolDef> {
+        self.registry.list()
+    }
+
+    pub async fn execute(
+        &self,
+        name: &str,
+        args: Value,
+        ctx: &ToolContext,
+    ) -> AgentResult<ToolResult> {
+        if self.denylist.contains(name) {
+            return Err(AgentError::Tool(format!("tool denied by policy: {name}")));
+        }
+        if let Some(allowlist) = &self.allowlist {
+            if !allowlist.contains(name) {
+                return Err(AgentError::Tool(format!(
+                    "tool not allowed by policy: {name}"
+                )));
+            }
+        }
+
+        let tool = self
+            .registry
+            .get(name)
+            .ok_or_else(|| AgentError::Tool(format!("tool not found: {name}")))?;
+
+        if let Some(hook) = &self.approval {
+            match hook.check(name, &args).await {
+                ApprovalDecision::Approve => {}
+                ApprovalDecision::Ask => {
+                    return Err(AgentError::Tool(format!(
+                        "approval required for tool {name}"
+                    )))
+                }
+                ApprovalDecision::Deny { reason } => {
+                    return Err(AgentError::Tool(format!(
+                        "tool denied: {name}, reason: {reason}"
+                    )))
+                }
+            }
+        }
+
+        tool.execute(args, ctx).await
+    }
+}
