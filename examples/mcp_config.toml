@@ -1,0 +1,116 @@
+# MCP Configuration File for agent-lib
+# This file defines MCP servers and their settings
+
+[general]
+# Default timeout for all MCP operations
+default_timeout = 30
+# Maximum number of retries for failed operations
+max_retries = 3
+# Enable detailed logging
+logging_enabled = true
+
+# Filesystem server (stdio)
+[[servers]]
+name = "filesystem"
+transport = "stdio"
+# Command to run the MCP filesystem server
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
+# Environment variables for this server
+env = { "NODE_ENV" = "production" }
+# Server-specific timeout (overrides general default)
+timeout = 60
+# Enable/disable this server
+enabled = true
+
+# Git server (stdio)
+[[servers]]
+name = "git"
+transport = "stdio"
+# Using uv to run the MCP git server
+command = "uvx"
+args = ["mcp-server-git"]
+# Custom environment variables
+env = { "GIT_CONFIG_GLOBAL" = "/tmp/gitconfig", "GIT_USER_NAME" = "mcp-user" }
+timeout = 45
+enabled = true
+
+# HTTP API server (HTTP)
+[[servers]]
+name = "remote-api"
+transport = "http"
+# HTTP endpoint
+endpoint = "https://api.example.com/mcp"
+# Authentication using bearer token
+auth = { type = "bearer", token = "${API_TOKEN}" }
+# Custom HTTP headers
+headers = { "X-API-Key" = "${API_KEY}", "X-Custom-Header" = "custom-value" }
+timeout = 120
+enabled = true
+
+# Database server (TCP)
+[[servers]]
+name = "database"
+transport = "tcp"
+endpoint = "localhost:5432"
+# Basic authentication
+auth = { type = "basic", username = "${DB_USER}", password = "${DB_PASSWORD}" }
+timeout = 30
+enabled = true
+
+# Websocket server (WebSocket)
+[[servers]]
+name = "realtime"
+transport = "websocket"
+endpoint = "wss://ws.example.com/mcp"
+# API key authentication
+auth = { type = "api_key", api_key = "${WS_TOKEN}", api_key_header = "X-Auth-Token" }
+headers = { "User-Agent" = "agent-lib/1.0" }
+timeout = 15
+enabled = false  # Disabled by default
+
+# SSE server (Server-Sent Events)
+[[servers]]
+name = "events"
+transport = "sse"
+endpoint = "https://events.example.com/stream"
+# Bearer token authentication
+auth = { type = "bearer", token = "${EVENTS_TOKEN}" }
+headers = { "Accept" = "text/event-stream" }
+timeout = 90
+enabled = false
+
+# Local development server
+[[servers]]
+name = "dev-tools"
+transport = "stdio"
+command = "cargo"
+args = ["run", "--bin", "mcp-dev-server"]
+# Environment variables with defaults
+env = {
+    "RUST_LOG" = "debug",
+    "DEV_MODE" = "true",
+    "API_KEY" = "dev-key-12345"
+}
+timeout = 300  # Longer timeout for development
+enabled = false  # Disabled in production
+
+# Example server with no authentication
+[[servers]]
+name = "public-api"
+transport = "http"
+endpoint = "https://public.api.example.com/v1/mcp"
+# No authentication needed for this public API
+headers = { "Accept-Version" = "1.0" }
+timeout = 20
+enabled = true
+
+# Example server with API key in query parameter
+[[servers]]
+name = "analytics-api"
+transport = "http"
+endpoint = "https://analytics.example.com/mcp"
+auth = { type = "api_key", api_key = "${ANALYTICS_KEY}", query_param = "api_key" }
+headers = { "User-Agent" = "analytics-client" }
+timeout = 30
+enabled = true

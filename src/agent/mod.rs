@@ -1,6 +1,7 @@
 mod config;
 mod definition;
 mod handoff;
+mod mcp_integration;
 mod orchestrator;
 
 use std::sync::Arc;

@@ -1,0 +1,74 @@
+{
+  "general": {
+    "default_timeout": 30,
+    "max_retries": 3,
+    "logging_enabled": true
+  },
+  "servers": [
+    {
+      "name": "filesystem",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "timeout": 60,
+      "enabled": true
+    },
+    {
+      "name": "git",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-git"],
+      "env": {
+        "GIT_CONFIG_GLOBAL": "/tmp/gitconfig",
+        "GIT_USER_NAME": "mcp-user"
+      },
+      "timeout": 45,
+      "enabled": true
+    },
+    {
+      "name": "remote-api",
+      "transport": "http",
+      "endpoint": "https://api.example.com/mcp",
+      "auth": {
+        "type": "bearer",
+        "token": "${API_TOKEN}"
+      },
+      "headers": {
+        "X-API-Key": "${API_KEY}",
+        "X-Custom-Header": "custom-value"
+      },
+      "timeout": 120,
+      "enabled": true
+    },
+    {
+      "name": "database",
+      "transport": "tcp",
+      "endpoint": "localhost:5432",
+      "auth": {
+        "type": "basic",
+        "username": "${DB_USER}",
+        "password": "${DB_PASSWORD}"
+      },
+      "timeout": 30,
+      "enabled": true
+    },
+    {
+      "name": "realtime",
+      "transport": "websocket",
+      "endpoint": "wss://ws.example.com/mcp",
+      "auth": {
+        "type": "api_key",
+        "api_key": "${WS_TOKEN}",
+        "api_key_header": "X-Auth-Token"
+      },
+      "headers": {
+        "User-Agent": "agent-lib/1.0"
+      },
+      "timeout": 15,
+      "enabled": false
+    }
+  ]
+}

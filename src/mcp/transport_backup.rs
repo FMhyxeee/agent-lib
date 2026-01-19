@@ -4,15 +4,14 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use futures::{SinkExt, StreamExt};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
+use tokio_tungstenite::tungstenite::Message;
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use crate::error::{AgentError, AgentResult};
-use crate::mcp::{McpRequest, McpResponse};
-use crate::mcp::config::{AuthConfig, TransportType};
+use crate::mcp::{McpRequest, McpResponse, config::{AuthConfig, TransportType}};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransportConfig {
@@ -73,7 +72,7 @@ impl McpTransport {
     }
 
     pub async fn from_enhanced_config(config: EnhancedTransportConfig) -> AgentResult<Self> {
-        let endpoint = config.endpoint;
+        let endpoint = config.endpoint.clone();
         let auth = config.auth.clone();
         let headers = config.headers.clone();
 
@@ -102,17 +101,17 @@ impl McpTransport {
             }
             TransportType::Tcp => {
                 // For TCP, the endpoint should be the address
-                TransportKind::Tcp(endpoint.clone())
+                TransportKind::Tcp(endpoint)
             }
             TransportType::Http | TransportType::Https => {
-                TransportKind::Http(endpoint.clone())
+                TransportKind::Http(endpoint)
             }
             TransportType::WebSocket | TransportType::Wss => {
-                TransportKind::Ws(endpoint.clone())
+                TransportKind::Ws(endpoint)
             }
             TransportType::Sse => {
                 // SSE over HTTP
-                TransportKind::Http(endpoint.clone())
+                TransportKind::Http(endpoint)
             }
         };
 
@@ -128,26 +127,20 @@ impl McpTransport {
         match &self.kind {
             TransportKind::Stdio(child) => {
                 let mut child = child.lock().await;
+                let stdin = child.stdin.as_mut()
+                    .ok_or_else(|| AgentError::Mcp("stdio stdin closed".to_string()))?;
                 let payload = serde_json::to_string(&request)
                     .map_err(|err| AgentError::Mcp(format!("serialize failed: {err}")))?;
-                {
-                    let stdin = child
-                        .stdin
-                        .as_mut()
-                        .ok_or_else(|| AgentError::Mcp("stdio stdin closed".to_string()))?;
-                    stdin
-                        .write_all(payload.as_bytes())
-                        .await
-                        .map_err(|err| AgentError::Mcp(format!("write failed: {err}")))?;
-                    stdin
-                        .flush()
-                        .await
-                        .map_err(|err| AgentError::Mcp(format!("flush failed: {err}")))?;
-                }
+                stdin
+                    .write_all(payload.as_bytes())
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("stdio write failed: {err}")))?;
+                stdin
+                    .flush()
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("stdio flush failed: {err}")))?;
 
-                let stdout = child
-                    .stdout
-                    .as_mut()
+                let stdout = child.stdout.as_mut()
                     .ok_or_else(|| AgentError::Mcp("stdio stdout closed".to_string()))?;
                 let mut reader = BufReader::new(stdout);
                 let mut line = String::new();
@@ -159,7 +152,7 @@ impl McpTransport {
                     .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
             }
             TransportKind::Tcp(address) => {
-                let mut stream = tokio::net::TcpStream::connect(address)
+                let mut stream = TcpStream::connect(address)
                     .await
                     .map_err(|err| AgentError::Mcp(format!("tcp connect failed: {err}")))?;
                 let payload = serde_json::to_string(&request)
@@ -167,15 +160,15 @@ impl McpTransport {
                 stream
                     .write_all(payload.as_bytes())
                     .await
-                    .map_err(|err| AgentError::Mcp(format!("write failed: {err}")))?;
+                    .map_err(|err| AgentError::Mcp(format!("tcp write failed: {err}")))?;
                 stream.flush().await
-                    .map_err(|err| AgentError::Mcp(format!("flush failed: {err}")))?;
+                    .map_err(|err| AgentError::Mcp(format!("tcp flush failed: {err}")))?;
 
                 let mut buffer = vec![0u8; 1024];
                 let n = stream
                     .read(&mut buffer)
                     .await
-                    .map_err(|err| AgentError::Mcp(format!("read failed: {err}")))?;
+                    .map_err(|err| AgentError::Mcp(format!("tcp read failed: {err}")))?;
                 let response = String::from_utf8_lossy(&buffer[..n]);
                 serde_json::from_str::<McpResponse>(&response)
                     .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
@@ -236,7 +229,7 @@ impl McpTransport {
         let payload = serde_json::to_string(&request)
             .map_err(|err| AgentError::Mcp(format!("serialize failed: {err}")))?;
 
-        ws_sender.send(tokio_tungstenite::tungstenite::Message::Text(payload))
+        ws_sender.send(Message::Text(payload))
             .await
             .map_err(|err| AgentError::Mcp(format!("websocket send failed: {err}")))?;
 
@@ -246,11 +239,11 @@ impl McpTransport {
             .ok_or_else(|| AgentError::Mcp("websocket response missing".to_string()))?;
 
         match response {
-            Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+            Ok(Message::Text(text)) => {
                 serde_json::from_str::<McpResponse>(&text)
                     .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
             }
-            Ok(_msg) => Err(AgentError::Mcp(
+            Ok(msg) => Err(AgentError::Mcp(
                 "ws response not text/binary".to_string(),
             )),
             Err(err) => Err(AgentError::Mcp(format!("websocket error: {err}"))),
@@ -271,7 +264,7 @@ impl McpTransport {
             }
             crate::mcp::config::AuthType::Basic => {
                 if let (Some(username), Some(password)) = (&auth.username, &auth.password) {
-                    let credentials = STANDARD.encode(format!("{}:{}", username, password));
+                    let credentials = base64::encode(format!("{}:{}", username, password));
                     request_builder = request_builder.header("Authorization", format!("Basic {}", credentials));
                 }
             }
@@ -291,8 +284,170 @@ impl McpTransport {
         }
         Ok(request_builder)
     }
+}
+
+    pub async fn from_enhanced_config(config: EnhancedTransportConfig) -> AgentResult<Self> {
+        let endpoint = config.endpoint.clone();
+        let auth = config.auth.clone();
+        let headers = config.headers.clone();
+
+        let kind = match config.transport_type {
+            TransportType::Stdio => {
+                let command = endpoint.trim_start_matches("stdio://");
+                let mut parts = command.split_whitespace();
+                let program = parts
+                    .next()
+                    .ok_or_else(|| AgentError::Mcp("missing stdio command".to_string()))?;
+                let args: Vec<String> = parts.map(|arg| arg.to_string()).collect();
+
+                // Set environment variables
+                let mut command = Command::new(program);
+                for (key, value) in &config.env {
+                    command.env(key, value);
+                }
+                command.args(args);
+
+                let child = command
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                    .map_err(|err| AgentError::Mcp(format!("spawn stdio failed: {err}")))?;
+                TransportKind::Stdio(Arc::new(Mutex::new(child)))
+            }
+            TransportType::Tcp => {
+                // For TCP, the endpoint should be the address
+                TransportKind::Tcp(endpoint)
+            }
+            TransportType::Http | TransportType::Https => {
+                TransportKind::Http(endpoint)
+            }
+            TransportType::WebSocket | TransportType::Wss => {
+                TransportKind::Ws(endpoint)
+            }
+            TransportType::Sse => {
+                // SSE over HTTP
+                TransportKind::Http(endpoint)
+            }
+        };
+
+        Ok(Self {
+            endpoint,
+            kind,
+            auth,
+            headers,
+        })
+    }
 
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+
+    pub async fn send(&self, request: McpRequest) -> AgentResult<McpResponse> {
+        match &self.kind {
+            TransportKind::Stdio(child) => {
+                let mut child = child.lock().await;
+                let payload = serde_json::to_string(&request)
+                    .map_err(|err| AgentError::Mcp(format!("serialize failed: {err}")))?;
+                {
+                    let stdin = child
+                        .stdin
+                        .as_mut()
+                        .ok_or_else(|| AgentError::Mcp("stdio stdin closed".to_string()))?;
+                    stdin
+                        .write_all(payload.as_bytes())
+                        .await
+                        .map_err(|err| AgentError::Mcp(format!("write failed: {err}")))?;
+                    stdin
+                        .write_all(b"\n")
+                        .await
+                        .map_err(|err| AgentError::Mcp(format!("write newline failed: {err}")))?;
+                    stdin
+                        .flush()
+                        .await
+                        .map_err(|err| AgentError::Mcp(format!("flush failed: {err}")))?;
+                }
+
+                let stdout = child
+                    .stdout
+                    .as_mut()
+                    .ok_or_else(|| AgentError::Mcp("stdio stdout closed".to_string()))?;
+                let mut reader = BufReader::new(stdout);
+                let mut line = String::new();
+                reader
+                    .read_line(&mut line)
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("read failed: {err}")))?;
+                serde_json::from_str::<McpResponse>(&line)
+                    .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
+            }
+            TransportKind::Tcp(address) => {
+                let mut stream = TcpStream::connect(address)
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("tcp connect failed: {err}")))?;
+                let payload = serde_json::to_string(&request)
+                    .map_err(|err| AgentError::Mcp(format!("serialize failed: {err}")))?;
+                stream
+                    .write_all(payload.as_bytes())
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("tcp write failed: {err}")))?;
+                stream
+                    .write_all(b"\n")
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("tcp write newline failed: {err}")))?;
+
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                reader
+                    .read_line(&mut line)
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("tcp read failed: {err}")))?;
+                serde_json::from_str::<McpResponse>(&line)
+                    .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
+            }
+            TransportKind::Http(endpoint) => {
+                let client = reqwest::Client::new();
+                let response = client
+                    .post(endpoint)
+                    .json(&request)
+                    .send()
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("http failed: {err}")))?;
+
+                response
+                    .json::<McpResponse>()
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("http parse failed: {err}")))
+            }
+            TransportKind::Ws(endpoint) => {
+                let (mut stream, _) = tokio_tungstenite::connect_async(endpoint.as_str())
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("ws connect failed: {err}")))?;
+                let payload = serde_json::to_string(&request)
+                    .map_err(|err| AgentError::Mcp(format!("serialize failed: {err}")))?;
+                stream
+                    .send(Message::Text(payload))
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("ws send failed: {err}")))?;
+
+                let response = stream
+                    .next()
+                    .await
+                    .ok_or_else(|| AgentError::Mcp("ws closed".to_string()))?
+                    .map_err(|err| AgentError::Mcp(format!("ws read failed: {err}")))?;
+
+                let text = match response {
+                    Message::Text(text) => text,
+                    Message::Binary(bytes) => String::from_utf8(bytes)
+                        .map_err(|err| AgentError::Mcp(format!("ws utf8 failed: {err}")))?,
+                    _ => {
+                        return Err(AgentError::Mcp(
+                            "ws response not text/binary".to_string(),
+                        ))
+                    }
+                };
+                serde_json::from_str::<McpResponse>(&text)
+                    .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
+            }
+        }
     }
 }

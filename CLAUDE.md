@@ -33,17 +33,23 @@ cargo test --no-run
 
 ### Running Examples
 ```bash
-# Run tool call example
-cargo run --example tool_call
+# Basic agent examples
+cargo run --example tool_call          # Tool usage demonstration
+cargo run --example simple_chat        # Simple chat agent
+cargo run --example tool_usage         # Tool usage patterns
+cargo run --example multi_agent        # Multi-agent coordination
 
-# Run simple chat example
-cargo run --example simple_chat
+# MCP (Model Context Protocol) examples
+cargo run --example mcp_client         # Basic MCP client
+cargo run --example mcp_demo           # MCP demo with basic operations
+cargo run --example mcp_demo_final     # Advanced MCP demo
+cargo run --example agent_with_mcp     # Agent with MCP integration
+cargo run --example agent_with_mcp_manager  # Agent with MCP manager
+cargo run --example simple_mcp_test   # Simple MCP testing
 
-# Run multi-agent example
-cargo run --example multi_agent
-
-# Run MCP client example
-cargo run --example mcp_client
+# Configuration examples
+cargo run --example config_loader_demo  # Configuration loading demo
+cargo run --example mcp_config_example  # MCP configuration example
 ```
 
 ### Linting & Format Check
@@ -92,8 +98,11 @@ This library uses an **event-driven architecture** based on SQ/EQ (Submission/Ev
    - Async message passing between components
 
 6. **MCP Integration** (`src/mcp/`)
-   - Model Context Protocol support
+   - Model Context Protocol support with full async implementation
    - Multiple transports: stdio, tcp, http, websocket
+   - Configuration management via JSON/TOML
+   - MCP manager for handling multiple MCP servers
+   - Transport backup and fallback mechanisms
 
 ### Key Communication Flow
 
@@ -117,7 +126,12 @@ This library uses an **event-driven architecture** based on SQ/EQ (Submission/Ev
 
 ### Configuration
 - Features: `openai`, `anthropic`, `local-llm`, `builtin-tools`, `mcp`
-- Environment variables for API keys (see README.md for details)
+- Environment variables:
+  - `OPENAI_API_KEY` - OpenAI API key (required for OpenAI feature)
+  - `GLM_BASE_URL` - GLM provider base URL (default: https://open.bigmodel.cn/api/paas/v4/chat/completions)
+  - `GLM_API_KEY` - GLM API key (required for GLM provider)
+  - `ANTHROPIC_API_KEY` - Anthropic API key (required for Anthropic feature)
+- MCP configuration via JSON/TOML files or environment variables
 
 ## Important Patterns
 
@@ -154,3 +168,44 @@ while let Some(event) = event_stream.recv().await {
 - Structured error information for debugging
 
 This architecture enables building sophisticated AI agents with tool use, multi-agent coordination, and robust safety mechanisms while maintaining clean abstractions and extensibility.
+
+## MCP Configuration
+
+### Configuration Files
+MCP can be configured via:
+- JSON files (`mcp_config.json`)
+- TOML files (`mcp_config.toml`)
+- Environment variables
+- Claude Desktop configuration files (`claude_desktop_config.json`)
+
+### Example MCP Configuration
+```json
+{
+  "servers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/root"]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "your_key_here"
+      }
+    }
+  }
+}
+```
+
+### Transport Endpoints
+- `stdio://path/to/binary --args` - Standard I/O
+- `tcp://127.0.0.1:9000` - TCP socket
+- `http://localhost:8080/mcp` - HTTP endpoint
+- `ws://localhost:8080/mcp` - WebSocket endpoint
+- `wss://localhost:8080/mcp` - Secure WebSocket endpoint
+
+### MCP Manager Features
+- Handle multiple MCP servers simultaneously
+- Transport health monitoring and automatic failover
+- Dynamic server registration/deregistration
+- Load balancing across multiple instances

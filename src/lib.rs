@@ -11,3 +11,15 @@ pub use agent::{Agent, AgentBuilder, AgentConfig, Orchestrator};
 pub use error::{AgentError, AgentResult};
 pub use protocol::{Event, Op};
 pub use session::{Session, SessionHandle, TurnContext};
+
+// Re-export MCP types for convenience
+pub use mcp::{
+    McpClient,
+    McpManager,
+    McpRequest,
+    McpResponse,
+    McpTool,
+    McpToolCall,
+    McpTransport,
+    TransportConfig,
+};
