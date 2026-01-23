@@ -10,13 +10,19 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures = "0.3"
 tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["io"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 tracing = "0.1"
 thiserror = "2"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 toml = "0.8"
 base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dependencies.tiktoken-rs]
+version = "0.5"
+optional = true
 
 [dependencies.async-openai]
 version = "0.26"
@@ -29,3 +35,4 @@ anthropic = []
 local-llm = []
 builtin-tools = []
 mcp = []
+codex-compat = ["dep:tiktoken-rs"]

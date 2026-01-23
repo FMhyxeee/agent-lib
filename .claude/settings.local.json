@@ -4,7 +4,9 @@
       "Bash(git *)",
       "Bash(cargo *)",
       "mcp__zread__read_file",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "mcp__zread__get_repo_structure",
+      "Bash(del:*)"
     ]
   }
 }

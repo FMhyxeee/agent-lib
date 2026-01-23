@@ -4,13 +4,17 @@ pub mod mcp;
 pub mod model;
 pub mod protocol;
 pub mod session;
+pub mod tasks;
+pub mod token;
 pub mod tools;
 pub mod trace;
 
 pub use agent::{Agent, AgentBuilder, AgentConfig, Orchestrator};
 pub use error::{AgentError, AgentResult};
 pub use protocol::{Event, Op};
-pub use session::{Session, SessionHandle, TurnContext};
+pub use session::{CompactedSummary, Session, SessionConfig, SessionHandle, TaskSession, TurnContext};
+pub use tasks::{CompactTask, RegularTask, RunningTask, SessionTask, Submission, TaskKind, submission_loop};
+pub use token::{TokenCounter, TruncationMode, TruncationPolicy, approx_token_count, tiktoken_count};
 
 // Re-export MCP types for convenience
 pub use mcp::{
@@ -22,4 +26,11 @@ pub use mcp::{
     McpToolCall,
     McpTransport,
     TransportConfig,
+};
+
+// Re-export Codex-compatible protocol types
+pub use protocol::{
+    ApprovalPolicy, CollaborationMode, CompactedItem, CustomPromptInfo, McpServerRefreshConfig,
+    McpToolInfo, ReasoningEffort, ReasoningSummary, ReviewDecision, ReviewRequest, SandboxPolicy,
+    SkillEntry, TurnAbortReason, UserInputItem, UserInputResponse,
 };
