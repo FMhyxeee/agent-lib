@@ -1,9 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 
 use crate::error::{AgentError, AgentResult};
 use crate::mcp::TransportConfig;
@@ -172,16 +172,21 @@ impl ConfigLoader {
     /// Load configuration from a TOML file
     pub async fn from_toml_file(path: impl AsRef<Path>) -> AgentResult<McpConfig> {
         let path = path.as_ref();
-        let content = tokio::fs::read_to_string(path)
-            .await
-            .map_err(|e| AgentError::Mcp(format!(
-                "failed to read config file '{}': {}", path.display(), e
-            )))?;
+        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+            AgentError::Mcp(format!(
+                "failed to read config file '{}': {}",
+                path.display(),
+                e
+            ))
+        })?;
 
-        let mut config: McpConfig = toml::from_str(&content)
-            .map_err(|e| AgentError::Mcp(format!(
-                "failed to parse TOML config from '{}': {}", path.display(), e
-            )))?;
+        let mut config: McpConfig = toml::from_str(&content).map_err(|e| {
+            AgentError::Mcp(format!(
+                "failed to parse TOML config from '{}': {}",
+                path.display(),
+                e
+            ))
+        })?;
 
         // Expand environment variables
         config.expand_environment_variables()?;
@@ -192,16 +197,21 @@ impl ConfigLoader {
     /// Load configuration from a JSON file
     pub async fn from_json_file(path: impl AsRef<Path>) -> AgentResult<McpConfig> {
         let path = path.as_ref();
-        let content = tokio::fs::read_to_string(path)
-            .await
-            .map_err(|e| AgentError::Mcp(format!(
-                "failed to read config file '{}': {}", path.display(), e
-            )))?;
+        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+            AgentError::Mcp(format!(
+                "failed to read config file '{}': {}",
+                path.display(),
+                e
+            ))
+        })?;
 
-        let mut config: McpConfig = serde_json::from_str(&content)
-            .map_err(|e| AgentError::Mcp(format!(
-                "failed to parse JSON config from '{}': {}", path.display(), e
-            )))?;
+        let mut config: McpConfig = serde_json::from_str(&content).map_err(|e| {
+            AgentError::Mcp(format!(
+                "failed to parse JSON config from '{}': {}",
+                path.display(),
+                e
+            ))
+        })?;
 
         // Expand environment variables
         config.expand_environment_variables()?;
@@ -216,9 +226,7 @@ impl ConfigLoader {
         // Check for MCP-specific environment variables
         if let Ok(json_config) = env::var("MCP_CONFIG_JSON") {
             config = serde_json::from_str(&json_config)
-                .map_err(|e| AgentError::Mcp(format!(
-                    "failed to parse MCP_CONFIG_JSON: {}", e
-                )))?;
+                .map_err(|e| AgentError::Mcp(format!("failed to parse MCP_CONFIG_JSON: {}", e)))?;
         }
 
         // Expand environment variables
@@ -235,11 +243,9 @@ impl ConfigLoader {
             PathBuf::from("/etc/agent-lib/mcp.toml"),
             PathBuf::from("/etc/agent-lib/mcp.json"),
             // User config
-            PathBuf::from(env::var("HOME")
-                .unwrap_or_else(|_| ".".to_string()))
+            PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string()))
                 .join(".config/agent-lib/mcp.toml"),
-            PathBuf::from(env::var("HOME")
-                .unwrap_or_else(|_| ".".to_string()))
+            PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string()))
                 .join(".config/agent-lib/mcp.json"),
             // Current directory
             PathBuf::from("./mcp.toml"),
@@ -282,20 +288,14 @@ impl McpConfig {
             // Expand environment variables in headers
             let mut expanded_headers = HashMap::new();
             for (key, value) in &server.headers {
-                expanded_headers.insert(
-                    key.clone(),
-                    Self::expand_env_vars(value)
-                );
+                expanded_headers.insert(key.clone(), Self::expand_env_vars(value));
             }
             server.headers = expanded_headers;
 
             // Expand environment variables in env map
             let mut expanded_env = HashMap::new();
             for (key, value) in &server.env {
-                expanded_env.insert(
-                    key.clone(),
-                    Self::expand_env_vars(value)
-                );
+                expanded_env.insert(key.clone(), Self::expand_env_vars(value));
             }
             server.env = expanded_env;
 
@@ -444,12 +444,9 @@ impl McpConfig {
 
             let server_name = server_config.name.clone();
             match manager.add_server_with_config(server_config).await {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to add server '{}': {}",
-                        server_name, e
-                    );
+                    tracing::warn!("Failed to add server '{}': {}", server_name, e);
                 }
             }
         }

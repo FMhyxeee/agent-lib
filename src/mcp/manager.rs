@@ -4,8 +4,8 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 
 use crate::error::{AgentError, AgentResult};
-use crate::mcp::{EnhancedTransportConfig, McpClient, McpTool, McpTransport, TransportConfig};
 use crate::mcp::config::{ConfigLoader, McpConfig, ServerConfig};
+use crate::mcp::{EnhancedTransportConfig, McpClient, McpTool, McpTransport, TransportConfig};
 
 /// Manages multiple MCP server connections
 /// Inspired by Codex's rmcp-client state management pattern
@@ -43,11 +43,14 @@ impl McpManager {
         let name = name.into();
         let endpoint = endpoint.into();
 
-        let transport = McpTransport::new(TransportConfig { endpoint }).await
-            .map_err(|err| AgentError::Mcp(format!(
-                "failed to create transport for server '{}': {}",
-                name, err
-            )))?;
+        let transport = McpTransport::new(TransportConfig { endpoint })
+            .await
+            .map_err(|err| {
+                AgentError::Mcp(format!(
+                    "failed to create transport for server '{}': {}",
+                    name, err
+                ))
+            })?;
 
         let client = Arc::new(McpClient::new(transport));
 
@@ -56,9 +59,12 @@ impl McpManager {
                 // Use timeout (Codex pattern)
                 tokio::time::timeout(timeout, client.list_tools())
                     .await
-                    .map_err(|_| AgentError::Mcp(
-                        format!("server '{}' timed out during tool discovery", name)
-                    ))?
+                    .map_err(|_| {
+                        AgentError::Mcp(format!(
+                            "server '{}' timed out during tool discovery",
+                            name
+                        ))
+                    })?
             }
             None => client.list_tools().await,
         }?;
@@ -85,19 +91,22 @@ impl McpManager {
         let name = name.into();
         let endpoint = endpoint.into();
 
-        let transport = McpTransport::new(TransportConfig { endpoint }).await
-            .map_err(|err| AgentError::Mcp(format!(
-                "failed to create transport for server '{}': {}",
-                name, err
-            )))?;
+        let transport = McpTransport::new(TransportConfig { endpoint })
+            .await
+            .map_err(|err| {
+                AgentError::Mcp(format!(
+                    "failed to create transport for server '{}': {}",
+                    name, err
+                ))
+            })?;
 
         let client = Arc::new(McpClient::new(transport));
 
         let tools = tokio::time::timeout(timeout, client.list_tools())
             .await
-            .map_err(|_| AgentError::Mcp(
-                format!("server '{}' timed out after {:?}", name, timeout)
-            ))?;
+            .map_err(|_| {
+                AgentError::Mcp(format!("server '{}' timed out after {:?}", name, timeout))
+            })?;
 
         let tools = tools?;
         let tools_count = tools.len();
@@ -214,11 +223,12 @@ impl McpManager {
             if server_config.enabled {
                 let server_name = server_config.name.clone();
                 match manager.add_server_with_config(server_config).await {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         tracing::warn!(
                             "Failed to load server '{}' from config: {}",
-                            server_name, e
+                            server_name,
+                            e
                         );
                     }
                 }
@@ -238,21 +248,26 @@ impl McpManager {
         // Create enhanced transport configuration
         let transport_config = self.create_enhanced_transport_config(&config).await?;
 
-        let transport = McpTransport::from_enhanced_config(transport_config).await
-            .map_err(|err| AgentError::Mcp(format!(
-                "failed to create transport for server '{}': {}",
-                config.name, err
-            )))?;
+        let transport = McpTransport::from_enhanced_config(transport_config)
+            .await
+            .map_err(|err| {
+                AgentError::Mcp(format!(
+                    "failed to create transport for server '{}': {}",
+                    config.name, err
+                ))
+            })?;
 
         let client = Arc::new(McpClient::new(transport));
 
         let timeout = config.timeout;
         let tools = tokio::time::timeout(timeout, client.list_tools())
             .await
-            .map_err(|_| AgentError::Mcp(format!(
-                "server '{}' timed out during tool discovery",
-                config.name
-            )))??;
+            .map_err(|_| {
+                AgentError::Mcp(format!(
+                    "server '{}' timed out during tool discovery",
+                    config.name
+                ))
+            })??;
 
         let mut servers = self.servers.lock().await;
         servers.insert(config.name.clone(), (client, tools.clone()));
@@ -267,7 +282,10 @@ impl McpManager {
     }
 
     /// Create enhanced transport configuration with auth and headers
-    async fn create_enhanced_transport_config(&self, config: &ServerConfig) -> AgentResult<EnhancedTransportConfig> {
+    async fn create_enhanced_transport_config(
+        &self,
+        config: &ServerConfig,
+    ) -> AgentResult<EnhancedTransportConfig> {
         Ok(EnhancedTransportConfig {
             endpoint: config.transport_config.endpoint.clone(),
             transport_type: config.transport.clone(),
@@ -302,7 +320,8 @@ impl McpManager {
     /// Get all server information (name, client, tools)
     pub async fn get_all_servers(&self) -> Vec<(String, Arc<McpClient>, Vec<McpTool>)> {
         let servers = self.servers.lock().await;
-        servers.iter()
+        servers
+            .iter()
             .map(|(name, (client, tools))| (name.clone(), Arc::clone(client), tools.clone()))
             .collect()
     }
@@ -310,7 +329,9 @@ impl McpManager {
     /// Get configuration for a specific server
     pub async fn get_server_info(&self, name: &str) -> Option<(Arc<McpClient>, Vec<McpTool>)> {
         let servers = self.servers.lock().await;
-        servers.get(name).map(|(client, tools)| (Arc::clone(client), tools.clone()))
+        servers
+            .get(name)
+            .map(|(client, tools)| (Arc::clone(client), tools.clone()))
     }
 }
 
@@ -333,7 +354,10 @@ mod tests {
         assert_eq!(manager.default_timeout, Some(Duration::from_secs(30)));
 
         let manager_with_timeout = McpManager::with_timeout(Duration::from_secs(60));
-        assert_eq!(manager_with_timeout.default_timeout, Some(Duration::from_secs(60)));
+        assert_eq!(
+            manager_with_timeout.default_timeout,
+            Some(Duration::from_secs(60))
+        );
     }
 
     #[tokio::test]
@@ -341,17 +365,19 @@ mod tests {
         let manager = McpManager::new();
 
         // Test concurrent access to server methods
-        let handles = (0..5).map(|_| {
-            let manager_ref = Arc::downgrade(&manager);
-            tokio::spawn(async move {
-                if let Some(manager) = manager_ref.upgrade() {
-                    // These operations should not cause deadlocks
-                    let _servers = manager.list_servers().await;
-                    let _count = manager.server_count().await;
-                    let _tools_count = manager.total_tools_count().await;
-                }
+        let handles = (0..5)
+            .map(|_| {
+                let manager_ref = Arc::downgrade(&manager);
+                tokio::spawn(async move {
+                    if let Some(manager) = manager_ref.upgrade() {
+                        // These operations should not cause deadlocks
+                        let _servers = manager.list_servers().await;
+                        let _count = manager.server_count().await;
+                        let _tools_count = manager.total_tools_count().await;
+                    }
+                })
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
         for handle in handles {
             handle.await.unwrap();

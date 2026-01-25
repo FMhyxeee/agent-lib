@@ -1,5 +1,5 @@
-use agent_lib::mcp::{McpClient, McpTransport, TransportConfig};
 use agent_lib::AgentResult;
+use agent_lib::mcp::{McpClient, McpTransport, TransportConfig};
 
 #[tokio::main]
 async fn main() -> AgentResult<()> {

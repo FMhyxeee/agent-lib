@@ -1,4 +1,4 @@
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 use agent_lib::protocol::Op;
 use agent_lib::session::Session;
@@ -24,7 +24,10 @@ async fn session_emits_events_for_start_turn() {
         .unwrap()
         .unwrap();
 
-    assert!(matches!(first, agent_lib::protocol::Event::TurnStarted { .. }));
+    assert!(matches!(
+        first,
+        agent_lib::protocol::Event::TurnStarted { .. }
+    ));
     assert!(matches!(
         second,
         agent_lib::protocol::Event::ModelComplete { .. }

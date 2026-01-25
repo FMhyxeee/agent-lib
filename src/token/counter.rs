@@ -4,9 +4,7 @@
 /// 根据经验值，大约每 4 个字节对应 1 个 token。
 pub fn approx_token_count(text: &str) -> usize {
     const APPROX_BYTES_PER_TOKEN: usize = 4;
-    text.len()
-        .saturating_add(APPROX_BYTES_PER_TOKEN - 1)
-        / APPROX_BYTES_PER_TOKEN
+    text.len().saturating_add(APPROX_BYTES_PER_TOKEN - 1) / APPROX_BYTES_PER_TOKEN
 }
 
 /// 精确的 token 计数 (使用 tiktoken-rs)
@@ -49,9 +47,7 @@ impl TokenCounter {
 
     /// 使用 tiktoken 创建计数器（如果可用）
     pub fn with_tiktoken() -> Self {
-        Self {
-            use_tiktoken: true,
-        }
+        Self { use_tiktoken: true }
     }
 
     /// 使用近似计数创建计数器

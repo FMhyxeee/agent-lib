@@ -4,7 +4,9 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::error::{AgentError, AgentResult};
-use crate::tools::{ApprovalDecision, ApprovalHook, ToolContext, ToolDef, ToolRegistry, ToolResult};
+use crate::tools::{
+    ApprovalDecision, ApprovalHook, ToolContext, ToolDef, ToolRegistry, ToolResult,
+};
 
 pub struct ToolExecutor {
     registry: ToolRegistry,
@@ -70,12 +72,12 @@ impl ToolExecutor {
                 ApprovalDecision::Ask => {
                     return Err(AgentError::Tool(format!(
                         "approval required for tool {name}"
-                    )))
+                    )));
                 }
                 ApprovalDecision::Deny { reason } => {
                     return Err(AgentError::Tool(format!(
                         "tool denied: {name}, reason: {reason}"
-                    )))
+                    )));
                 }
             }
         }

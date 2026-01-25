@@ -12,19 +12,19 @@ pub mod trace;
 pub use agent::{Agent, AgentBuilder, AgentConfig, Orchestrator};
 pub use error::{AgentError, AgentResult};
 pub use protocol::{Event, Op};
-pub use session::{CompactedSummary, Session, SessionConfig, SessionHandle, TaskSession, TurnContext};
-pub use tasks::{CompactTask, RegularTask, RunningTask, SessionTask, Submission, TaskKind, submission_loop};
-pub use token::{TokenCounter, TruncationMode, TruncationPolicy, approx_token_count, tiktoken_count};
+pub use session::{
+    CompactedSummary, Session, SessionConfig, SessionHandle, TaskSession, TurnContext,
+};
+pub use tasks::{
+    CompactTask, RegularTask, RunningTask, SessionTask, Submission, TaskKind, submission_loop,
+};
+pub use token::{
+    TokenCounter, TruncationMode, TruncationPolicy, approx_token_count, tiktoken_count,
+};
 
 // Re-export MCP types for convenience
 pub use mcp::{
-    McpClient,
-    McpManager,
-    McpRequest,
-    McpResponse,
-    McpTool,
-    McpToolCall,
-    McpTransport,
+    McpClient, McpManager, McpRequest, McpResponse, McpTool, McpToolCall, McpTransport,
     TransportConfig,
 };
 

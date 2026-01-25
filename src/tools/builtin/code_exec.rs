@@ -1,8 +1,8 @@
 use std::process::Stdio;
 
 use async_trait::async_trait;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -47,31 +47,23 @@ impl Tool for CodeExecTool {
 
         let output = match language {
             "python" => run_with_stdin("python", &["-"], code).await?,
-            "bash" | "sh" if !cfg!(windows) => {
-                Command::new("sh")
-                    .arg("-c")
-                    .arg(code)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .output()
-                    .await
-                    .map_err(|err| AgentError::Tool(format!("exec failed: {err}")))?
-            }
-            "powershell" if cfg!(windows) => {
-                Command::new("powershell")
-                    .arg("-Command")
-                    .arg(code)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .output()
-                    .await
-                    .map_err(|err| AgentError::Tool(format!("exec failed: {err}")))?
-            }
-            other => {
-                return Err(AgentError::Tool(format!(
-                    "unsupported language: {other}"
-                )))
-            }
+            "bash" | "sh" if !cfg!(windows) => Command::new("sh")
+                .arg("-c")
+                .arg(code)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .await
+                .map_err(|err| AgentError::Tool(format!("exec failed: {err}")))?,
+            "powershell" if cfg!(windows) => Command::new("powershell")
+                .arg("-Command")
+                .arg(code)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .await
+                .map_err(|err| AgentError::Tool(format!("exec failed: {err}")))?,
+            other => return Err(AgentError::Tool(format!("unsupported language: {other}"))),
         };
 
         Ok(ToolResult {

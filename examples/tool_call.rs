@@ -3,8 +3,8 @@ use std::sync::Arc;
 use agent_lib::tools::builtin::FileSystemTool;
 use agent_lib::tools::{ApprovalDecision, ApprovalHook, ToolContext, ToolExecutor, ToolRegistry};
 use async_trait::async_trait;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 
 struct AllowAllApproval;
 

@@ -23,16 +23,13 @@ async fn run_basic_example() -> AgentResult<()> {
     println!("=== Agent with MCP Tools Example ===\n");
 
     // Build an agent with MCP server tools
-    let builder = AgentBuilder::new()
-        .with_model(OpenAiProvider::new("gpt-4"));
+    let builder = AgentBuilder::new().with_model(OpenAiProvider::new("gpt-4"));
     let builder = builder
         // Add tools from an MCP server (e.g., filesystem server)
         // Note: This requires a real MCP server running
         .with_mcp_server("stdio://mcp-server-filesystem")
         .await;
-    let agent = builder
-        .with_approval_hook(AllowAllApproval)
-        .build()?;
+    let agent = builder.with_approval_hook(AllowAllApproval).build()?;
 
     // List all registered tools (builtin + MCP)
     println!("Registered tools:");
@@ -79,12 +76,14 @@ async fn example_with_client() -> AgentResult<()> {
     }
 
     // Build agent with the pre-configured client
-    let builder = AgentBuilder::new()
-        .with_model(OpenAiProvider::new("gpt-4"));
+    let builder = AgentBuilder::new().with_model(OpenAiProvider::new("gpt-4"));
     let builder = builder.with_mcp_client(client.clone()).await?;
     let agent = builder.build()?;
 
-    println!("Total registered tools: {}", agent.tool_executor().list().len());
+    println!(
+        "Total registered tools: {}",
+        agent.tool_executor().list().len()
+    );
     Ok(())
 }
 
@@ -99,7 +98,10 @@ async fn example_multiple_servers() -> AgentResult<()> {
     let manager = McpManager::new();
 
     // Add multiple MCP servers
-    match manager.add_server("filesystem", "stdio://mcp-server-filesystem").await {
+    match manager
+        .add_server("filesystem", "stdio://mcp-server-filesystem")
+        .await
+    {
         Ok(tools) => {
             println!("Added filesystem server with {} tools", tools.len());
         }
@@ -118,12 +120,14 @@ async fn example_multiple_servers() -> AgentResult<()> {
     }
 
     // Build agent with the manager
-    let builder = AgentBuilder::new()
-        .with_model(OpenAiProvider::new("gpt-4"));
+    let builder = AgentBuilder::new().with_model(OpenAiProvider::new("gpt-4"));
     let builder = builder.with_mcp_manager(manager.clone()).await?;
     let agent = builder.build()?;
 
-    println!("Total registered tools: {}", agent.tool_executor().list().len());
+    println!(
+        "Total registered tools: {}",
+        agent.tool_executor().list().len()
+    );
 
     Ok(())
 }

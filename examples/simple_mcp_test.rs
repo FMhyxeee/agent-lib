@@ -1,6 +1,6 @@
 //! Simple test to verify MCP functionality works
 
-use agent_lib::mcp::{McpManager, McpClient, McpTransport, TransportConfig};
+use agent_lib::mcp::{McpClient, McpManager, McpTransport, TransportConfig};
 use agent_lib::{AgentBuilder, AgentResult};
 use std::sync::Arc;
 
@@ -37,7 +37,9 @@ async fn run_main_test() -> AgentResult<()> {
     println!("Testing McpClient creation...");
     let transport = match McpTransport::new(TransportConfig {
         endpoint: "invalid://test".to_string(),
-    }).await {
+    })
+    .await
+    {
         Ok(t) => {
             println!("✓ Transport created");
             t
@@ -87,7 +89,9 @@ async fn test_adapter_creation() -> AgentResult<()> {
     // Test adapter creation
     let transport = match McpTransport::new(TransportConfig {
         endpoint: "invalid://test".to_string(),
-    }).await {
+    })
+    .await
+    {
         Ok(t) => t,
         Err(e) => {
             println!("✓ Expected transport error: {}", e);

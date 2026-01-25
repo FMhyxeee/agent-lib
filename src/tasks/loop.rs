@@ -21,10 +21,7 @@ pub struct Submission {
 impl Submission {
     /// 创建新的 Submission
     pub fn new(id: impl Into<String>, op: Op) -> Self {
-        Self {
-            id: id.into(),
-            op,
-        }
+        Self { id: id.into(), op }
     }
 }
 
@@ -145,7 +142,15 @@ async fn handle_override_turn_context(
 
     // 更新当前上下文
     // TODO: 实现上下文覆盖逻辑
-    let _ = (cwd, approval_policy, sandbox_policy, model, effort, summary, collaboration_mode);
+    let _ = (
+        cwd,
+        approval_policy,
+        sandbox_policy,
+        model,
+        effort,
+        summary,
+        collaboration_mode,
+    );
 
     sess.emit_event(crate::protocol::Event::Warning {
         message: "Turn context overridden".to_string(),
@@ -180,8 +185,15 @@ async fn handle_user_input_or_turn(
         } => {
             // TODO: 处理用户 Turn
             let _ = (
-                items, cwd, approval_policy, sandbox_policy, model, effort,
-                summary, final_output_json_schema, collaboration_mode,
+                items,
+                cwd,
+                approval_policy,
+                sandbox_policy,
+                model,
+                effort,
+                summary,
+                final_output_json_schema,
+                collaboration_mode,
             );
         }
         Op::UserInputLegacy {

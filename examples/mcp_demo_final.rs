@@ -1,6 +1,6 @@
 //! MCP integration demo - Final version
 
-use agent_lib::mcp::{McpManager, McpClient, McpTransport, TransportConfig};
+use agent_lib::mcp::{McpClient, McpManager, McpTransport, TransportConfig};
 use agent_lib::{AgentBuilder, AgentResult};
 use std::sync::Arc;
 
@@ -28,16 +28,15 @@ async fn main() -> AgentResult<()> {
 
     // Test 4: AgentBuilder with MCP
     println!("\n4. Testing AgentBuilder with MCP...");
-    let _builder = AgentBuilder::new()
-        .with_mcp_server("invalid://test")
-        .await;
+    let _builder = AgentBuilder::new().with_mcp_server("invalid://test").await;
     println!("   ✓ AgentBuilder processed MCP tools without crashing");
 
     // Test 5: McpClient creation
     println!("\n5. Testing McpClient creation...");
     let result = McpTransport::new(TransportConfig {
         endpoint: "invalid://test".to_string(),
-    }).await;
+    })
+    .await;
     match result {
         Ok(_) => println!("   ✗ Unexpected success: transport created"),
         Err(e) => println!("   ✓ Expected transport error: {}", e),
@@ -47,7 +46,9 @@ async fn main() -> AgentResult<()> {
     println!("\n6. Testing MCP timeout methods...");
     if let Err(e) = McpTransport::new(TransportConfig {
         endpoint: "stdio://test".to_string(),
-    }).await {
+    })
+    .await
+    {
         println!("   Skipping timeout test (no valid transport): {}", e);
     } else {
         println!("   ✓ Would test timeout methods with valid transport");

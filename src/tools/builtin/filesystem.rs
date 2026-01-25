@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use tokio::fs;
 
 use crate::error::{AgentError, AgentResult};
@@ -70,9 +70,7 @@ impl Tool for FileSystemTool {
                     .map_err(|err| AgentError::Tool(format!("delete failed: {err}")))?;
                 Ok(ToolResult::text("ok"))
             }
-            other => Err(AgentError::Tool(format!(
-                "unsupported operation: {other}"
-            ))),
+            other => Err(AgentError::Tool(format!("unsupported operation: {other}"))),
         }
     }
 }
@@ -88,7 +86,10 @@ fn resolve_path(cwd: Option<&str>, sandbox_root: Option<&str>, path: &str) -> Ag
 
     if let Some(root) = sandbox_root {
         let root_path = normalize_path(&PathBuf::from(root));
-        if resolved.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        if resolved
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
             return Err(AgentError::Tool(
                 "parent dir segments not allowed in sandbox".to_string(),
             ));

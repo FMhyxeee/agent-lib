@@ -51,10 +51,7 @@ impl McpToolAdapter {
     /// # }
     /// ```
     pub fn new(definition: McpTool, client: Arc<McpClient>) -> Self {
-        Self {
-            definition,
-            client,
-        }
+        Self { definition, client }
     }
 
     /// Gets the tool name
@@ -145,7 +142,9 @@ mod tests {
     async fn test_mcp_tool_adapter_definition() {
         let transport = McpTransport::new(TransportConfig {
             endpoint: "stdio://echo-server".to_string(),
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         let client = Arc::new(McpClient::new(transport));
         let tools = client.list_tools().await.unwrap();
@@ -177,7 +176,9 @@ mod tests {
         // Create mock client (we won't actually call it in this test)
         let transport = match McpTransport::new(TransportConfig {
             endpoint: "stdio://echo-server".to_string(),
-        }).await {
+        })
+        .await
+        {
             Ok(transport) => transport,
             Err(err) => {
                 eprintln!("Skipping test: transport unavailable: {}", err);

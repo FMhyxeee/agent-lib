@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 
 use crate::error::{AgentError, AgentResult};
 use crate::tools::{Tool, ToolContext, ToolDef, ToolResult};
@@ -50,11 +50,7 @@ impl Tool for NetworkTool {
             "PUT" => client.put(url),
             "DELETE" => client.delete(url),
             "PATCH" => client.patch(url),
-            other => {
-                return Err(AgentError::Tool(format!(
-                    "unsupported method: {other}"
-                )))
-            }
+            other => return Err(AgentError::Tool(format!("unsupported method: {other}"))),
         };
 
         let response = if let Some(body) = body {

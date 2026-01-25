@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -92,7 +92,11 @@ struct GlmUsage {
 
 #[async_trait]
 impl ModelClient for GlmProvider {
-    async fn chat(&self, messages: Vec<Message>, tools: Vec<ToolDef>) -> AgentResult<ModelResponse> {
+    async fn chat(
+        &self,
+        messages: Vec<Message>,
+        tools: Vec<ToolDef>,
+    ) -> AgentResult<ModelResponse> {
         let client = reqwest::Client::new();
         let request = GlmChatRequest {
             model: self.model.clone(),
@@ -239,15 +243,12 @@ fn auth_headers(api_key: &str) -> AgentResult<HeaderMap> {
 fn parse_delta(payload: &str) -> AgentResult<Option<String>> {
     let response: GlmChatResponse = serde_json::from_str(payload)
         .map_err(|err| AgentError::Model(format!("glm stream parse failed: {err}")))?;
-    let delta = response
-        .choices
-        .first()
-        .and_then(|choice| {
-            choice
-                .delta
-                .as_ref()
-                .or(choice.message.as_ref())
-                .and_then(|msg| msg.content.clone())
-        });
+    let delta = response.choices.first().and_then(|choice| {
+        choice
+            .delta
+            .as_ref()
+            .or(choice.message.as_ref())
+            .and_then(|msg| msg.content.clone())
+    });
     Ok(delta)
 }

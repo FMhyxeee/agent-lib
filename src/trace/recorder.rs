@@ -20,17 +20,11 @@ impl TraceRecorder {
     }
 
     pub fn record(&self, event: Event) {
-        let mut guard = self
-            .events
-            .lock()
-            .expect("trace recorder poisoned");
+        let mut guard = self.events.lock().expect("trace recorder poisoned");
         guard.push(TraceEvent { event });
     }
 
     pub fn events(&self) -> Vec<TraceEvent> {
-        self.events
-            .lock()
-            .expect("trace recorder poisoned")
-            .clone()
+        self.events.lock().expect("trace recorder poisoned").clone()
     }
 }

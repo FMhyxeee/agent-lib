@@ -5,8 +5,8 @@ use agent_lib::tools::{
     ToolResult,
 };
 use async_trait::async_trait;
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 
 struct DummyTool;
 
@@ -20,7 +20,11 @@ impl Tool for DummyTool {
         }
     }
 
-    async fn execute(&self, _args: Value, _ctx: &ToolContext) -> agent_lib::AgentResult<ToolResult> {
+    async fn execute(
+        &self,
+        _args: Value,
+        _ctx: &ToolContext,
+    ) -> agent_lib::AgentResult<ToolResult> {
         Ok(ToolResult::text("ok"))
     }
 }

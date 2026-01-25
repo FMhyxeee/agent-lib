@@ -7,13 +7,7 @@
 //! - Common configuration locations
 
 use agent_lib::mcp::{
-    AuthConfig,
-    AuthType,
-    ConfigLoader,
-    McpConfig,
-    McpManager,
-    ServerConfig,
-    TransportConfig,
+    AuthConfig, AuthType, ConfigLoader, McpConfig, McpManager, ServerConfig, TransportConfig,
     TransportType,
 };
 use std::path::Path;
@@ -30,10 +24,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("   Servers: {}", config.servers.len());
             for server in &config.servers {
                 if server.enabled {
-                    println!("   - {}: {} (timeout: {:?})",
-                        server.name,
-                        server.transport_config.endpoint,
-                        server.timeout
+                    println!(
+                        "   - {}: {} (timeout: {:?})",
+                        server.name, server.transport_config.endpoint, server.timeout
                     );
                 }
             }
@@ -176,8 +169,14 @@ async fn load_into_manager() -> Result<(), Box<dyn std::error::Error>> {
     let config = ConfigLoader::from_toml_file(config_path).await?;
     let manager = McpManager::from_config(config).await?;
 
-    println!("   Manager created with {} servers", manager.server_count().await);
-    println!("   Total tools across all servers: {}", manager.total_tools_count().await);
+    println!(
+        "   Manager created with {} servers",
+        manager.server_count().await
+    );
+    println!(
+        "   Total tools across all servers: {}",
+        manager.total_tools_count().await
+    );
 
     // List servers
     let servers = manager.list_servers().await;
@@ -269,7 +268,10 @@ async fn test_config_validation() {
 
     match invalid_auth_config.validate() {
         Ok(_) => println!("✗ Invalid authentication validation should have failed"),
-        Err(e) => println!("✓ Invalid authentication validation correctly failed: {}", e),
+        Err(e) => println!(
+            "✓ Invalid authentication validation correctly failed: {}",
+            e
+        ),
     }
 }
 

@@ -29,7 +29,7 @@ pub struct StreamChunk {
 #[async_trait]
 pub trait ModelClient: Send + Sync {
     async fn chat(&self, messages: Vec<Message>, tools: Vec<ToolDef>)
-        -> AgentResult<ModelResponse>;
+    -> AgentResult<ModelResponse>;
 
     async fn chat_stream(
         &self,

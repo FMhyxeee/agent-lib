@@ -12,7 +12,9 @@ use agent_lib::protocol::{
 };
 use agent_lib::session::{Session, SessionConfig, TurnContext};
 use agent_lib::tasks::{CompactTask, Submission, TaskKind};
-use agent_lib::token::{approx_token_count, tiktoken_count, TokenCounter, TruncationMode, TruncationPolicy};
+use agent_lib::token::{
+    TokenCounter, TruncationMode, TruncationPolicy, approx_token_count, tiktoken_count,
+};
 use tokio::sync::mpsc;
 
 #[tokio::test]
@@ -191,7 +193,10 @@ async fn test_session_config() {
     assert_eq!(config.event_buffer, 256);
     assert_eq!(config.default_model, "gpt-4");
     assert_eq!(config.default_cwd, Some("/home/user".to_string()));
-    assert_eq!(config.default_approval_policy, Some(ApprovalPolicy::NeverAsk));
+    assert_eq!(
+        config.default_approval_policy,
+        Some(ApprovalPolicy::NeverAsk)
+    );
 }
 
 #[tokio::test]
@@ -246,9 +251,7 @@ fn test_mcp_server_refresh_config() {
     let config = McpServerRefreshConfig::default();
     assert!(!config.force_reload);
 
-    let config = McpServerRefreshConfig {
-        force_reload: true,
-    };
+    let config = McpServerRefreshConfig { force_reload: true };
     assert!(config.force_reload);
 }
 

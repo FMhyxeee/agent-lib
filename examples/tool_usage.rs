@@ -25,10 +25,7 @@ async fn main() -> AgentResult<()> {
         .with_approval_hook(AllowAllApproval)
         .build()?;
 
-    println!(
-        "Registered tools: {}",
-        agent.tool_executor().list().len()
-    );
+    println!("Registered tools: {}", agent.tool_executor().list().len());
 
     let _ = agent.run("Try using the shell tool.").await;
     Ok(())

@@ -5,8 +5,8 @@
 
 use agent_lib::mcp::{ConfigLoader, McpManager};
 use agent_lib::{AgentBuilder, AgentResult};
-use std::sync::Arc;
 use std::env;
+use std::sync::Arc;
 
 async fn load_and_use_mcp_config() -> AgentResult<()> {
     println!("=== MCP Configuration Integration Example ===\n");
@@ -15,7 +15,10 @@ async fn load_and_use_mcp_config() -> AgentResult<()> {
     println!("1. Loading from TOML configuration file...");
     let manager = match McpManager::from_config_file("examples/mcp_config.toml").await {
         Ok(manager) => {
-            println!("✓ Loaded {} MCP servers from TOML configuration", manager.server_count().await);
+            println!(
+                "✓ Loaded {} MCP servers from TOML configuration",
+                manager.server_count().await
+            );
             manager
         }
         Err(e) => {
@@ -29,7 +32,10 @@ async fn load_and_use_mcp_config() -> AgentResult<()> {
     println!("\n2. Loading from JSON configuration file...");
     match McpManager::from_config_json("examples/mcp_config.json").await {
         Ok(manager) => {
-            println!("✓ Loaded {} MCP servers from JSON configuration", manager.server_count().await);
+            println!(
+                "✓ Loaded {} MCP servers from JSON configuration",
+                manager.server_count().await
+            );
         }
         Err(e) => {
             println!("⚠ Failed to load JSON config: {}", e);
@@ -40,7 +46,10 @@ async fn load_and_use_mcp_config() -> AgentResult<()> {
     println!("\n3. Loading from environment variables...");
     match McpManager::from_env().await {
         Ok(manager) => {
-            println!("✓ Loaded {} MCP servers from environment variables", manager.server_count().await);
+            println!(
+                "✓ Loaded {} MCP servers from environment variables",
+                manager.server_count().await
+            );
         }
         Err(e) => {
             println!("⚠ No environment configuration found: {}", e);
@@ -51,7 +60,10 @@ async fn load_and_use_mcp_config() -> AgentResult<()> {
     println!("\n4. Auto-detecting configuration from common locations...");
     match McpManager::from_common_locations().await {
         Ok(manager) => {
-            println!("✓ Loaded {} MCP servers from common locations", manager.server_count().await);
+            println!(
+                "✓ Loaded {} MCP servers from common locations",
+                manager.server_count().await
+            );
         }
         Err(e) => {
             println!("⚠ No configuration found in common locations: {}", e);
@@ -102,7 +114,9 @@ async fn load_and_use_mcp_config() -> AgentResult<()> {
                     .build()?;
                 println!("✓ Agent created successfully with MCP integration");
                 */
-                println!("ℹ Agent creation requires OpenAI API key (set OPENAI_API_KEY environment variable)");
+                println!(
+                    "ℹ Agent creation requires OpenAI API key (set OPENAI_API_KEY environment variable)"
+                );
             }
             Err(_) => {
                 println!("ℹ To test agent creation, set OpenAI API key:");

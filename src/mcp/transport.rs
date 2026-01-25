@@ -2,17 +2,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use futures::{SinkExt, StreamExt};
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use crate::error::{AgentError, AgentResult};
-use crate::mcp::{McpRequest, McpResponse};
 use crate::mcp::config::{AuthConfig, TransportType};
+use crate::mcp::{McpRequest, McpResponse};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransportConfig {
@@ -104,12 +104,8 @@ impl McpTransport {
                 // For TCP, the endpoint should be the address
                 TransportKind::Tcp(endpoint.clone())
             }
-            TransportType::Http | TransportType::Https => {
-                TransportKind::Http(endpoint.clone())
-            }
-            TransportType::WebSocket | TransportType::Wss => {
-                TransportKind::Ws(endpoint.clone())
-            }
+            TransportType::Http | TransportType::Https => TransportKind::Http(endpoint.clone()),
+            TransportType::WebSocket | TransportType::Wss => TransportKind::Ws(endpoint.clone()),
             TransportType::Sse => {
                 // SSE over HTTP
                 TransportKind::Http(endpoint.clone())
@@ -168,7 +164,9 @@ impl McpTransport {
                     .write_all(payload.as_bytes())
                     .await
                     .map_err(|err| AgentError::Mcp(format!("write failed: {err}")))?;
-                stream.flush().await
+                stream
+                    .flush()
+                    .await
                     .map_err(|err| AgentError::Mcp(format!("flush failed: {err}")))?;
 
                 let mut buffer = vec![0u8; 1024];
@@ -180,12 +178,8 @@ impl McpTransport {
                 serde_json::from_str::<McpResponse>(&response)
                     .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
             }
-            TransportKind::Http(url) => {
-                self.send_http_request(url, request).await
-            }
-            TransportKind::Ws(url) => {
-                self.send_websocket_request(url, request).await
-            }
+            TransportKind::Http(url) => self.send_http_request(url, request).await,
+            TransportKind::Ws(url) => self.send_websocket_request(url, request).await,
         }
     }
 
@@ -216,15 +210,24 @@ impl McpTransport {
             return Err(AgentError::Mcp(format!(
                 "http request failed with status {}: {}",
                 response.status(),
-                response.text().await.unwrap_or_else(|_| "Unknown error".to_string())
+                response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".to_string())
             )));
         }
 
-        response.json().await
+        response
+            .json()
+            .await
             .map_err(|err| AgentError::Mcp(format!("http response parse failed: {err}")))
     }
 
-    async fn send_websocket_request(&self, url: &str, request: McpRequest) -> AgentResult<McpResponse> {
+    async fn send_websocket_request(
+        &self,
+        url: &str,
+        request: McpRequest,
+    ) -> AgentResult<McpResponse> {
         use tokio_tungstenite::connect_async;
 
         let (ws_stream, _) = connect_async(url)
@@ -236,7 +239,8 @@ impl McpTransport {
         let payload = serde_json::to_string(&request)
             .map_err(|err| AgentError::Mcp(format!("serialize failed: {err}")))?;
 
-        ws_sender.send(tokio_tungstenite::tungstenite::Message::Text(payload))
+        ws_sender
+            .send(tokio_tungstenite::tungstenite::Message::Text(payload))
             .await
             .map_err(|err| AgentError::Mcp(format!("websocket send failed: {err}")))?;
 
@@ -250,9 +254,7 @@ impl McpTransport {
                 serde_json::from_str::<McpResponse>(&text)
                     .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
             }
-            Ok(_msg) => Err(AgentError::Mcp(
-                "ws response not text/binary".to_string(),
-            )),
+            Ok(_msg) => Err(AgentError::Mcp("ws response not text/binary".to_string())),
             Err(err) => Err(AgentError::Mcp(format!("websocket error: {err}"))),
         }
     }
@@ -266,13 +268,15 @@ impl McpTransport {
         match auth.auth_type {
             crate::mcp::config::AuthType::Bearer => {
                 if let Some(token) = &auth.token {
-                    request_builder = request_builder.header("Authorization", format!("Bearer {}", token));
+                    request_builder =
+                        request_builder.header("Authorization", format!("Bearer {}", token));
                 }
             }
             crate::mcp::config::AuthType::Basic => {
                 if let (Some(username), Some(password)) = (&auth.username, &auth.password) {
                     let credentials = STANDARD.encode(format!("{}:{}", username, password));
-                    request_builder = request_builder.header("Authorization", format!("Basic {}", credentials));
+                    request_builder =
+                        request_builder.header("Authorization", format!("Basic {}", credentials));
                 }
             }
             crate::mcp::config::AuthType::ApiKey => {
@@ -286,7 +290,9 @@ impl McpTransport {
             }
             crate::mcp::config::AuthType::OAuth2 => {
                 // OAuth2 not yet implemented
-                return Err(AgentError::Mcp("OAuth2 authentication not yet supported".to_string()));
+                return Err(AgentError::Mcp(
+                    "OAuth2 authentication not yet supported".to_string(),
+                ));
             }
         }
         Ok(request_builder)

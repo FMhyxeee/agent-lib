@@ -6,7 +6,8 @@
       "mcp__zread__read_file",
       "Bash(findstr:*)",
       "mcp__zread__get_repo_structure",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

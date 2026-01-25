@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, Mutex};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::{Mutex, mpsc};
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::{AgentError, AgentResult};
 use crate::protocol::{ApprovalPolicy, Event, EventQueue, Op, SubmissionQueue};
@@ -301,4 +301,3 @@ async fn session_loop(mut op_receiver: mpsc::Receiver<Op>, event_sender: mpsc::S
         }
     }
 }
-

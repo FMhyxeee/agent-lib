@@ -3,7 +3,7 @@ mod r#loop;
 mod regular;
 
 pub use compact::CompactTask;
-pub use r#loop::{submission_loop, Submission};
+pub use r#loop::{Submission, submission_loop};
 pub use regular::RegularTask;
 
 use async_trait::async_trait;

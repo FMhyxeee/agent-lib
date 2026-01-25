@@ -43,17 +43,17 @@ async fn run_manager_example() -> AgentResult<()> {
     // Add filesystem server
     results.push((
         "filesystem",
-        manager.add_server("filesystem", "stdio://mcp-server-filesystem").await,
+        manager
+            .add_server("filesystem", "stdio://mcp-server-filesystem")
+            .await,
     ));
 
     // Add database server
     results.push((
         "database",
-        manager.add_server_with_timeout(
-            "database",
-            "tcp://localhost:5432",
-            Duration::from_secs(10),
-        ).await,
+        manager
+            .add_server_with_timeout("database", "tcp://localhost:5432", Duration::from_secs(10))
+            .await,
     ));
 
     // Show results
@@ -69,16 +69,16 @@ async fn run_manager_example() -> AgentResult<()> {
     }
 
     // Build agent with the shared manager
-    let builder = AgentBuilder::new()
-        .with_model(OpenAiProvider::new("gpt-4"));
+    let builder = AgentBuilder::new().with_model(OpenAiProvider::new("gpt-4"));
     let builder = builder.with_mcp_manager(manager.clone()).await?;
-    let agent = builder
-        .with_approval_hook(SmartApproval)
-        .build()?;
+    let agent = builder.with_approval_hook(SmartApproval).build()?;
 
     // Show tool information
     println!("\n=== Tool Information ===");
-    println!("Total registered tools: {}", agent.tool_executor().list().len());
+    println!(
+        "Total registered tools: {}",
+        agent.tool_executor().list().len()
+    );
 
     for tool in agent.tool_executor().list() {
         println!("  - {} ({})", tool.name, tool.description);
@@ -123,7 +123,10 @@ async fn run_manager_example() -> AgentResult<()> {
 
     // Get specific client
     if let Some(client) = manager.get_client("filesystem").await {
-        println!("Found filesystem client: {}", Arc::as_ptr(&client) as *const () as usize);
+        println!(
+            "Found filesystem client: {}",
+            Arc::as_ptr(&client) as *const () as usize
+        );
     } else {
         println!("Filesystem client not found");
     }
@@ -146,20 +149,21 @@ async fn example_shared_manager() -> AgentResult<()> {
     let manager = McpManager::new();
 
     // Add a server (will fail without real server, but shows pattern)
-    if let Err(err) = manager.add_server("shared", "stdio://mcp-server-test").await {
+    if let Err(err) = manager
+        .add_server("shared", "stdio://mcp-server-test")
+        .await
+    {
         println!("Server add failed (expected): {}", err);
     }
 
     // Create multiple agents sharing the same manager
     println!("Creating agents with shared manager...");
 
-    let builder = AgentBuilder::new()
-        .with_model(OpenAiProvider::new("gpt-4"));
+    let builder = AgentBuilder::new().with_model(OpenAiProvider::new("gpt-4"));
     let builder = builder.with_mcp_manager(manager.clone()).await?;
     let agent1 = builder.build()?;
 
-    let builder = AgentBuilder::new()
-        .with_model(OpenAiProvider::new("gpt-4"));
+    let builder = AgentBuilder::new().with_model(OpenAiProvider::new("gpt-4"));
     let builder = builder.with_mcp_manager(manager.clone()).await?;
     let agent2 = builder.build()?;
 
@@ -185,7 +189,9 @@ async fn example_server_management() -> AgentResult<()> {
     let servers = ["test1", "test2", "test3"];
 
     for name in &servers {
-        let result = manager.add_server(*name, format!("stdio://server-{}", name)).await;
+        let result = manager
+            .add_server(*name, format!("stdio://server-{}", name))
+            .await;
         match result {
             Ok(_) => println!("✓ {} added", name),
             Err(err) => println!("✗ {} failed: {}", name, err),

@@ -40,8 +40,8 @@ impl ModelClient for OpenAiProvider {
             use async_openai::types::{
                 ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
                 ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
-                ChatCompletionRequestUserMessageContent, ChatCompletionTool, ChatCompletionToolType,
-                CreateChatCompletionRequest, FunctionObject,
+                ChatCompletionRequestUserMessageContent, ChatCompletionTool,
+                ChatCompletionToolType, CreateChatCompletionRequest, FunctionObject,
             };
             let config = if let Some(key) = &self.api_key {
                 OpenAIConfig::new().with_api_key(key)
@@ -53,12 +53,12 @@ impl ModelClient for OpenAiProvider {
             let converted: Vec<ChatCompletionRequestMessage> = messages
                 .into_iter()
                 .map(|msg| match msg.role {
-                    crate::model::MessageRole::System => ChatCompletionRequestMessage::System(
-                        ChatCompletionRequestSystemMessage {
+                    crate::model::MessageRole::System => {
+                        ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
                             content: ChatCompletionRequestSystemMessageContent::Text(msg.content),
                             name: None,
-                        },
-                    ),
+                        })
+                    }
                     _ => ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
                         content: ChatCompletionRequestUserMessageContent::Text(msg.content),
                         name: None,
@@ -115,9 +115,7 @@ impl ModelClient for OpenAiProvider {
         }
         #[cfg(not(feature = "openai"))]
         {
-            Err(AgentError::Model(
-                "openai feature not enabled".to_string(),
-            ))
+            Err(AgentError::Model("openai feature not enabled".to_string()))
         }
     }
 
@@ -132,8 +130,8 @@ impl ModelClient for OpenAiProvider {
             use async_openai::types::{
                 ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
                 ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
-                ChatCompletionRequestUserMessageContent, ChatCompletionTool, ChatCompletionToolType,
-                CreateChatCompletionRequest, FunctionObject,
+                ChatCompletionRequestUserMessageContent, ChatCompletionTool,
+                ChatCompletionToolType, CreateChatCompletionRequest, FunctionObject,
             };
             let config = if let Some(key) = &self.api_key {
                 OpenAIConfig::new().with_api_key(key)
@@ -145,12 +143,12 @@ impl ModelClient for OpenAiProvider {
             let converted: Vec<ChatCompletionRequestMessage> = messages
                 .into_iter()
                 .map(|msg| match msg.role {
-                    crate::model::MessageRole::System => ChatCompletionRequestMessage::System(
-                        ChatCompletionRequestSystemMessage {
+                    crate::model::MessageRole::System => {
+                        ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
                             content: ChatCompletionRequestSystemMessageContent::Text(msg.content),
                             name: None,
-                        },
-                    ),
+                        })
+                    }
                     _ => ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
                         content: ChatCompletionRequestUserMessageContent::Text(msg.content),
                         name: None,
@@ -211,9 +209,7 @@ impl ModelClient for OpenAiProvider {
         }
         #[cfg(not(feature = "openai"))]
         {
-            Err(AgentError::Model(
-                "openai feature not enabled".to_string(),
-            ))
+            Err(AgentError::Model("openai feature not enabled".to_string()))
         }
     }
 }

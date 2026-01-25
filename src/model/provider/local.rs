@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::error::{AgentError, AgentResult};
-use crate::model::{not_implemented_client, Message, ModelClient, ModelResponse, StreamChunk};
+use crate::model::{Message, ModelClient, ModelResponse, StreamChunk, not_implemented_client};
 use crate::tools::ToolDef;
 
 #[derive(Debug, Clone)]
@@ -11,7 +11,9 @@ pub struct LocalProvider {
 
 impl LocalProvider {
     pub fn new(model: impl Into<String>) -> Self {
-        Self { model: model.into() }
+        Self {
+            model: model.into(),
+        }
     }
 }
 

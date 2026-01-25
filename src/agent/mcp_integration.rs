@@ -41,10 +41,16 @@ impl AgentBuilder {
         // Create transport connection
         let transport = match McpTransport::new(TransportConfig {
             endpoint: endpoint_str.clone(),
-        }).await {
+        })
+        .await
+        {
             Ok(t) => t,
             Err(err) => {
-                tracing::warn!("Failed to create MCP transport for {}: {}", endpoint_str, err);
+                tracing::warn!(
+                    "Failed to create MCP transport for {}: {}",
+                    endpoint_str,
+                    err
+                );
                 return self;
             }
         };
@@ -55,7 +61,11 @@ impl AgentBuilder {
         let tools = match client.list_tools().await {
             Ok(t) => t,
             Err(err) => {
-                tracing::warn!("Failed to list tools from MCP server {}: {}", endpoint_str, err);
+                tracing::warn!(
+                    "Failed to list tools from MCP server {}: {}",
+                    endpoint_str,
+                    err
+                );
                 return self;
             }
         };
@@ -169,7 +179,8 @@ impl AgentBuilder {
             self.registry.register(Arc::new(adapter));
         }
 
-        tracing::info!("Registered {} MCP tools from {} servers",
+        tracing::info!(
+            "Registered {} MCP tools from {} servers",
             tools_count,
             manager.server_count().await
         );
@@ -187,7 +198,9 @@ mod tests {
     #[tokio::test]
     async fn test_with_mcp_server_connection_failure() {
         let builder = AgentBuilder::new();
-        let builder = builder.with_mcp_server("invalid://nonexistent-server").await;
+        let builder = builder
+            .with_mcp_server("invalid://nonexistent-server")
+            .await;
 
         // Should not panic and should return the builder unchanged
         // (except for the registry having potential tools from a previous successful call)
@@ -200,7 +213,9 @@ mod tests {
     async fn test_with_mcp_client() {
         let transport = McpTransport::new(TransportConfig {
             endpoint: "stdio://echo-server".to_string(),
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         let client = Arc::new(McpClient::new(transport));
         let builder = AgentBuilder::new();

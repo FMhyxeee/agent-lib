@@ -4,12 +4,12 @@
 //! Some tests are marked as `#[ignore]` because they require
 //! a real MCP server to be running.
 
-use agent_lib::mcp::{McpManager, McpClient, McpTransport, TransportConfig, McpTool};
+use agent_lib::mcp::{McpClient, McpManager, McpTool, McpTransport, TransportConfig};
 use agent_lib::tools::{Tool, ToolDef};
 use agent_lib::{AgentBuilder, AgentError, AgentResult};
 use serde_json::json;
 use std::sync::Arc;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 /// Helper function to create a mock tool for testing
 fn create_mock_tool(name: &str) -> McpTool {
@@ -34,7 +34,10 @@ async fn test_mcp_manager_creation() -> AgentResult<()> {
     assert_eq!(manager.total_tools_count().await, 0);
 
     let manager_with_timeout = McpManager::with_timeout(Duration::from_secs(60));
-    assert_eq!(manager_with_timeout.default_timeout(), Some(Duration::from_secs(60)));
+    assert_eq!(
+        manager_with_timeout.default_timeout(),
+        Some(Duration::from_secs(60))
+    );
 
     Ok(())
 }
@@ -93,7 +96,9 @@ async fn test_mcp_tool_adapter_creation() -> AgentResult<()> {
     // Create mock transport and client
     let transport = match McpTransport::new(TransportConfig {
         endpoint: "stdio://echo".to_string(),
-    }).await {
+    })
+    .await
+    {
         Ok(transport) => transport,
         Err(err) => {
             eprintln!("Skipping test: transport unavailable: {}", err);
@@ -124,7 +129,8 @@ async fn test_mcp_tool_adapter_execution() -> AgentResult<()> {
     // Create mock transport (will fail without real server)
     let result = McpTransport::new(TransportConfig {
         endpoint: "stdio://nonexistent".to_string(),
-    }).await;
+    })
+    .await;
 
     // This test shows the adapter creation and error handling pattern
     match result {
@@ -170,9 +176,7 @@ async fn test_mcp_tool_adapter_with_real_server() -> AgentResult<()> {
 #[tokio::test]
 async fn test_agent_builder_mcp_server_method() -> AgentResult<()> {
     // Test with invalid endpoint (should not panic)
-    let _builder = AgentBuilder::new()
-        .with_mcp_server("invalid://test")
-        .await;
+    let _builder = AgentBuilder::new().with_mcp_server("invalid://test").await;
 
     // Test with different transport types
     let invalid_endpoints = vec![
@@ -196,7 +200,8 @@ async fn test_agent_builder_mcp_client_method() -> AgentResult<()> {
     // Create invalid transport
     let result = McpTransport::new(TransportConfig {
         endpoint: "invalid://test".to_string(),
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(transport) => {
@@ -247,7 +252,9 @@ async fn test_timeout_behavior() -> AgentResult<()> {
     let _tool = create_mock_tool("timeout-test");
     let transport = match McpTransport::new(TransportConfig {
         endpoint: "stdio://test".to_string(),
-    }).await {
+    })
+    .await
+    {
         Ok(transport) => transport,
         Err(err) => {
             eprintln!("Skipping test: transport unavailable: {}", err);
@@ -261,8 +268,9 @@ async fn test_timeout_behavior() -> AgentResult<()> {
     // Without a real server, we just verify the API is accessible
     let timeout_result = timeout(
         Duration::from_millis(100),
-        client.list_tools_with_timeout(Some(Duration::from_millis(50)))
-    ).await;
+        client.list_tools_with_timeout(Some(Duration::from_millis(50))),
+    )
+    .await;
 
     match timeout_result {
         Ok(result) => {
@@ -316,7 +324,9 @@ async fn test_error_handling_patterns() -> AgentResult<()> {
     let tool = create_mock_tool("error-test");
     let transport = match McpTransport::new(TransportConfig {
         endpoint: "stdio://error-server".to_string(),
-    }).await {
+    })
+    .await
+    {
         Ok(transport) => transport,
         Err(err) => {
             eprintln!("Skipping test: transport unavailable: {}", err);
@@ -358,7 +368,11 @@ mod mock_server {
             Self
         }
 
-        pub async fn handle_request(&self, method: &str, params: &serde_json::Value) -> serde_json::Value {
+        pub async fn handle_request(
+            &self,
+            method: &str,
+            params: &serde_json::Value,
+        ) -> serde_json::Value {
             match method {
                 "tools/list" => json!({
                     "tools": [
@@ -377,7 +391,7 @@ mod mock_server {
                 "tools/call" => json!({
                     "content": [{"type": "text", "text": "Mock result"}]
                 }),
-                _ => json!({"error": "Unknown method"})
+                _ => json!({"error": "Unknown method"}),
             }
         }
     }
@@ -393,10 +407,15 @@ async fn test_mock_server_pattern() -> AgentResult<()> {
     assert!(list_response["tools"].is_array());
 
     // Test tool call
-    let call_response = server.handle_request("tools/call", &json!({
-        "name": "mock_tool",
-        "arguments": {"test": "value"}
-    })).await;
+    let call_response = server
+        .handle_request(
+            "tools/call",
+            &json!({
+                "name": "mock_tool",
+                "arguments": {"test": "value"}
+            }),
+        )
+        .await;
 
     assert!(call_response["content"].is_array());
 
