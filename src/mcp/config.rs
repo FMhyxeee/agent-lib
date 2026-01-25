@@ -44,10 +44,11 @@ pub struct ServerConfig {
 }
 
 /// Transport type configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TransportType {
     /// Standard input/output communication (child process)
+    #[default]
     Stdio,
     /// TCP socket connection
     Tcp,
@@ -61,12 +62,6 @@ pub enum TransportType {
     Wss,
     /// Server-sent events
     Sse,
-}
-
-impl Default for TransportType {
-    fn default() -> Self {
-        TransportType::Stdio
-    }
 }
 
 /// Authentication configuration
@@ -96,10 +91,11 @@ pub struct AuthConfig {
 }
 
 /// Authentication types
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthType {
     /// No authentication
+    #[default]
     None,
     /// Bearer token authentication
     Bearer,
@@ -112,14 +108,8 @@ pub enum AuthType {
     OAuth2,
 }
 
-impl Default for AuthType {
-    fn default() -> Self {
-        AuthType::None
-    }
-}
-
 /// Complete MCP configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpConfig {
     /// General configuration
     #[serde(default)]
@@ -144,15 +134,6 @@ pub struct GeneralConfig {
     /// Whether to enable logging
     #[serde(default = "default_enabled")]
     pub logging_enabled: bool,
-}
-
-impl Default for McpConfig {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            servers: Vec::new(),
-        }
-    }
 }
 
 impl Default for GeneralConfig {
@@ -322,7 +303,7 @@ impl McpConfig {
                 chars.next(); // Skip '{'
                 let mut var_name = String::new();
 
-                while let Some(ch) = chars.next() {
+                for ch in chars.by_ref() {
                     if ch == '}' {
                         break;
                     }
@@ -338,7 +319,7 @@ impl McpConfig {
                     result.push_str(&var_name);
                     result.push('}');
                 }
-            } else if ch == '$' && chars.peek().map_or(false, |c| c.is_alphabetic()) {
+            } else if ch == '$' && chars.peek().is_some_and(|c| c.is_alphabetic()) {
                 // Start of $VAR pattern (no braces)
                 let mut var_name = String::from("$");
 
@@ -490,10 +471,10 @@ mod tests {
 
         // Test multiple variables
         let result = McpConfig::expand_env_vars("url: $BASE_URL/api/${VERSION}/end");
-        if let Ok(base_url) = env::var("BASE_URL") {
-            if let Ok(version) = env::var("VERSION") {
-                assert_eq!(result, format!("url: {}/api/{}/end", base_url, version));
-            }
+        if let Ok(base_url) = env::var("BASE_URL")
+            && let Ok(version) = env::var("VERSION")
+        {
+            assert_eq!(result, format!("url: {}/api/{}/end", base_url, version));
         }
 
         // Test non-existent variable

@@ -3,10 +3,9 @@
 //! This example shows how to use MCP configuration files with agent-lib.
 //! It demonstrates different ways to load and use MCP server configurations.
 
-use agent_lib::mcp::{ConfigLoader, McpManager};
-use agent_lib::{AgentBuilder, AgentResult};
+use agent_lib::mcp::McpManager;
+use agent_lib::AgentResult;
 use std::env;
-use std::sync::Arc;
 
 async fn load_and_use_mcp_config() -> AgentResult<()> {
     println!("=== MCP Configuration Integration Example ===\n");
@@ -167,7 +166,7 @@ async fn load_and_use_mcp_config() -> AgentResult<()> {
     println!("  ${{VAR_NAME}}      - Braced notation (recommended)");
     println!("  $VAR_NAME        - Simple notation");
     println!("  ${{DEFAULT_VALUE}}- With fallback (custom implementation needed)");
-    println!("");
+    println!();
     println!("Example usage:");
     println!("  token = \"${{API_TOKEN}}\"");
     println!("  endpoint = \"https://${{API_HOST}}/api/mcp\"");

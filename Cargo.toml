@@ -41,8 +41,9 @@ local-llm = []
 builtin-tools = []
 mcp = []
 codex-compat = ["dep:tiktoken-rs"]
+bench = ["dep:criterion", "codex-compat"]
 
 [[bench]]
 name = "token_bench"
 harness = false
-optional = true
+required-features = ["bench"]

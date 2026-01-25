@@ -179,10 +179,8 @@ impl ModelClient for GlmProvider {
                                 if payload == "[DONE]" {
                                     return;
                                 }
-                                if let Ok(delta) = parse_delta(payload) {
-                                    if let Some(delta) = delta {
-                                        let _ = sender.send(StreamChunk { delta }).await;
-                                    }
+                                if let Ok(Some(delta)) = parse_delta(payload) {
+                                    let _ = sender.send(StreamChunk { delta }).await;
                                 }
                             }
                         }

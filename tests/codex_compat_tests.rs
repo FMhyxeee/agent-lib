@@ -187,6 +187,8 @@ async fn test_session_config() {
         default_model: "gpt-4".to_string(),
         default_cwd: Some("/home/user".to_string()),
         default_approval_policy: Some(ApprovalPolicy::NeverAsk),
+        mcp_manager: None,
+        max_undo_steps: 10,
     };
 
     assert_eq!(config.queue_buffer, 128);
@@ -197,6 +199,8 @@ async fn test_session_config() {
         config.default_approval_policy,
         Some(ApprovalPolicy::NeverAsk)
     );
+    assert!(config.mcp_manager.is_none());
+    assert_eq!(config.max_undo_steps, 10);
 }
 
 #[tokio::test]

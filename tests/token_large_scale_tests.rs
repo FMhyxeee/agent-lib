@@ -183,11 +183,11 @@ mod large_scale_tests {
 
         // 添加大量Unicode内容
         for i in 0..100 {
-            history.push(Message::user(&format!(
+            history.push(Message::user(format!(
                 "你好世界 {} 🌍 Hello World {} 🚀",
                 i, i
             )));
-            history.push(Message::assistant(&format!("回复 {} Response {} ✨", i, i)));
+            history.push(Message::assistant(format!("回复 {} Response {} ✨", i, i)));
         }
 
         let count = history.total_tokens();

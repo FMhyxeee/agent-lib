@@ -1,5 +1,6 @@
 mod context;
 mod history;
+#[allow(clippy::module_inception)]
 mod session;
 mod state;
 

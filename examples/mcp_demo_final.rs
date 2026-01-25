@@ -1,8 +1,7 @@
 //! MCP integration demo - Final version
 
-use agent_lib::mcp::{McpClient, McpManager, McpTransport, TransportConfig};
+use agent_lib::mcp::{McpManager, McpTransport, TransportConfig};
 use agent_lib::{AgentBuilder, AgentResult};
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> AgentResult<()> {

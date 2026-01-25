@@ -81,7 +81,7 @@ mod concurrent_tests {
         let final_history = history.lock().await;
         assert!(final_history.total_tokens() > 0);
         // 可能有多个压缩操作
-        assert!(final_history.summaries().len() >= 0);
+        assert!(final_history.summaries().len() <= final_history.len());
     }
 
     #[tokio::test]
@@ -126,7 +126,7 @@ mod concurrent_tests {
         let mut handles = vec![];
 
         // 并发调用策略方法
-        for i in 0..50 {
+        for _ in 0..50 {
             let p = Arc::clone(&policy);
             handles.push(tokio::spawn(async move {
                 let different_counts = vec![1000, 5000, 10000, 20000, 50000];
@@ -206,7 +206,7 @@ mod concurrent_tests {
         // 验证最终状态
         let final_history = history.lock().await;
         assert!(final_history.total_tokens() > 0);
-        assert!(final_history.len() > 0);
+        assert!(!final_history.is_empty());
     }
 
     #[tokio::test]
@@ -327,7 +327,7 @@ mod concurrent_tests {
         // 验证最终状态
         let final_history = history.lock().await;
         assert!(final_history.total_tokens() > 0);
-        assert!(final_history.len() > 0);
+        assert!(!final_history.is_empty());
 
         // 性能断言：200个操作应该在合理时间内完成
         assert!(elapsed.as_secs() < 5, "Stress test should complete quickly");

@@ -175,8 +175,8 @@ mod tests {
     #[test]
     fn test_count_batch() {
         let counter = TokenCounter::new(false);
-        let texts = vec!["hello", "world", "test"];
-        let texts_refs: Vec<&str> = texts.iter().copied().collect();
+        let texts = ["hello", "world", "test"];
+        let texts_refs: Vec<&str> = texts.to_vec();
 
         let expected = counter.count("hello") + counter.count("world") + counter.count("test");
         let actual = counter.count_batch(&texts_refs);

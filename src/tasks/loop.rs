@@ -127,6 +127,7 @@ async fn handle_interrupt(sess: &Session) {
     sess.abort_all_tasks().await;
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_override_turn_context(
     sess: &Session,
     _sub_id: String,
@@ -220,8 +221,8 @@ async fn handle_user_input_or_turn(
             // 更新上下文
             let base_ctx = &(*ctx);
             let new_ctx = crate::session::TurnContext {
-                model: model,
-                cwd: if cwd != std::path::PathBuf::from(".") {
+                model,
+                cwd: if cwd != std::path::Path::new(".") {
                     Some(cwd.to_string_lossy().to_string())
                 } else {
                     base_ctx.cwd.clone()
@@ -469,11 +470,7 @@ async fn handle_thread_rollback(sess: &Session, num_turns: u32) {
     // 计算要保留的消息数量
     let history = sess.history().await;
     let current_len = history.len();
-    let keep_recent = if current_len > num_turns as usize {
-        current_len - num_turns as usize
-    } else {
-        0
-    };
+    let keep_recent = current_len.saturating_sub(num_turns as usize);
 
     // 使用现有的 compact 机制
     let summary = format!("Rolled back {} turns", num_turns);

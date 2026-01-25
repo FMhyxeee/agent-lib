@@ -28,7 +28,7 @@ async fn main() -> AgentResult<()> {
 
     // Test 4: AgentBuilder with MCP
     println!("\n4. Testing AgentBuilder with MCP...");
-    let builder = AgentBuilder::new().with_mcp_server("invalid://test").await;
+    let _builder = AgentBuilder::new().with_mcp_server("invalid://test").await;
 
     // Note: This will fail when trying to build due to missing model provider
     // but shows that the MCP integration works

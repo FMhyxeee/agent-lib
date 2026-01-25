@@ -371,7 +371,7 @@ mod mock_server {
         pub async fn handle_request(
             &self,
             method: &str,
-            params: &serde_json::Value,
+            _params: &serde_json::Value,
         ) -> serde_json::Value {
             match method {
                 "tools/list" => json!({

@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// 批准策略 - 定义工具执行需要用户批准的条件
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ApprovalPolicy {
     /// 总是询问用户是否批准
+    #[default]
     AlwaysAsk,
     /// 只在非安全操作时询问
     ReadOnlySafe,
@@ -13,43 +14,27 @@ pub enum ApprovalPolicy {
     NeverAsk,
 }
 
-impl Default for ApprovalPolicy {
-    fn default() -> Self {
-        Self::AlwaysAsk
-    }
-}
-
 /// 沙盒策略 - 定义文件系统操作的沙盒模式
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum SandboxPolicy {
     /// 只读模式，不能修改文件
     Readonly,
     /// 持久化模式，修改会保存到磁盘
+    #[default]
     Persistent,
     /// 内存模式，修改只在内存中，不保存
     InMemory,
 }
 
-impl Default for SandboxPolicy {
-    fn default() -> Self {
-        Self::Persistent
-    }
-}
-
 /// 推理努力程度 - 控制模型推理的深度
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReasoningEffort {
     Low,
+    #[default]
     Medium,
     High,
-}
-
-impl Default for ReasoningEffort {
-    fn default() -> Self {
-        Self::Medium
-    }
 }
 
 /// 推理摘要 - 存储之前的推理结果
@@ -109,33 +94,20 @@ impl UserInputItem {
 }
 
 /// 协作模式
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum CollaborationMode {
     /// 单人模式
+    #[default]
     Solo,
     /// 协作模式
     Collaborative,
 }
 
-impl Default for CollaborationMode {
-    fn default() -> Self {
-        Self::Solo
-    }
-}
-
 /// MCP 服务器刷新配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpServerRefreshConfig {
     pub force_reload: bool,
-}
-
-impl Default for McpServerRefreshConfig {
-    fn default() -> Self {
-        Self {
-            force_reload: false,
-        }
-    }
 }
 
 /// 审查请求

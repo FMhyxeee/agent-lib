@@ -276,6 +276,7 @@ async fn test_config_validation() {
 }
 
 // Environment variable expansion test
+#[allow(dead_code)]
 async fn test_env_expansion() {
     println!("\n7. Testing environment variable expansion...");
 

@@ -140,6 +140,7 @@ async fn main() -> AgentResult<()> {
 }
 
 /// Example of sharing manager between multiple agents
+#[allow(dead_code)]
 async fn example_shared_manager() -> AgentResult<()> {
     use agent_lib::mcp::McpManager;
 
@@ -177,6 +178,7 @@ async fn example_shared_manager() -> AgentResult<()> {
 }
 
 /// Example of server management operations
+#[allow(dead_code)]
 async fn example_server_management() -> AgentResult<()> {
     use agent_lib::mcp::McpManager;
 
@@ -214,6 +216,7 @@ async fn example_server_management() -> AgentResult<()> {
 }
 
 /// Main function demonstrating all advanced examples
+#[allow(dead_code)]
 async fn main_advanced_examples() -> AgentResult<()> {
     println!("=== Advanced MCP Examples ===\n");
 

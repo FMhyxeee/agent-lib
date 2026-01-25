@@ -139,6 +139,7 @@ pub struct Session {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 struct UndoSnapshot {
     history: ConversationHistory,
     turn_id: String,

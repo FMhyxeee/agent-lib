@@ -103,9 +103,9 @@ impl ModelClient for OpenAiProvider {
                 .unwrap_or_default();
 
             let usage = response.usage.map(|usage| TokenUsage {
-                prompt_tokens: usage.prompt_tokens as u32,
-                completion_tokens: usage.completion_tokens as u32,
-                total_tokens: usage.total_tokens as u32,
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: usage.completion_tokens,
+                total_tokens: usage.total_tokens,
             });
 
             Ok(ModelResponse {

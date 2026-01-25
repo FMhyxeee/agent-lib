@@ -7,12 +7,15 @@ use crate::error::{AgentError, AgentResult};
 use crate::mcp::config::{ConfigLoader, McpConfig, ServerConfig};
 use crate::mcp::{EnhancedTransportConfig, McpClient, McpTool, McpTransport, TransportConfig};
 
+type ServerEntry = (Arc<McpClient>, Vec<McpTool>);
+type ServerMap = HashMap<String, ServerEntry>;
+
 /// Manages multiple MCP server connections
 /// Inspired by Codex's rmcp-client state management pattern
 #[derive(Debug)]
 pub struct McpManager {
     /// Map of server name to (client, tools)
-    servers: Mutex<HashMap<String, (Arc<McpClient>, Vec<McpTool>)>>,
+    servers: Mutex<ServerMap>,
     /// Default timeout for MCP operations
     default_timeout: Option<Duration>,
 }

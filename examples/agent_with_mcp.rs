@@ -49,6 +49,7 @@ async fn run_basic_example() -> AgentResult<()> {
 }
 
 /// Alternative example using a pre-configured MCP client
+#[allow(dead_code)]
 async fn example_with_client() -> AgentResult<()> {
     use agent_lib::mcp::{McpClient, McpTransport, TransportConfig};
     use std::sync::Arc;
@@ -88,9 +89,9 @@ async fn example_with_client() -> AgentResult<()> {
 }
 
 /// Example showing multiple MCP servers
+#[allow(dead_code)]
 async fn example_multiple_servers() -> AgentResult<()> {
     use agent_lib::mcp::McpManager;
-    use std::sync::Arc;
 
     println!("=== Agent with Multiple MCP Servers ===\n");
 
@@ -133,27 +134,29 @@ async fn example_multiple_servers() -> AgentResult<()> {
 }
 
 /// Transport examples showing all supported protocols
+#[allow(dead_code)]
 fn show_transport_examples() {
     println!("=== Supported MCP Transports ===\n");
 
     println!("All transport types are supported:");
     println!("  # Stdio (spawn subprocess)");
     println!("  .with_mcp_server(\"stdio://mcp-server-filesystem\").await");
-    println!("");
+    println!();
     println!("  # TCP");
     println!("  .with_mcp_server(\"tcp://localhost:8080\").await");
-    println!("");
+    println!();
     println!("  # HTTP");
     println!("  .with_mcp_server(\"http://localhost:9000/mcp\").await");
     println!("  .with_mcp_server(\"https://api.example.com/mcp\").await");
-    println!("");
+    println!();
     println!("  # WebSocket");
     println!("  .with_mcp_server(\"ws://localhost:9000/ws\").await");
     println!("  .with_mcp_server(\"wss://api.example.com/ws\").await");
-    println!("");
+    println!();
 }
 
 /// Main function demonstrating all examples
+#[allow(dead_code)]
 async fn main_all_examples() -> AgentResult<()> {
     show_transport_examples();
 
