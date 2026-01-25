@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc};
@@ -5,9 +6,11 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::{AgentError, AgentResult};
+use crate::mcp::McpManager;
 use crate::protocol::{ApprovalPolicy, Event, EventQueue, Op, SubmissionQueue};
 use crate::session::{ConversationHistory, SessionState};
 use crate::tasks::{RunningTask, SessionTask};
+use chrono;
 
 /// TaskSession - 任务需要访问的 Session 接口
 ///
@@ -37,6 +40,9 @@ pub trait TaskSession: Send + Sync + 'static {
     async fn should_compact(&self, limit: usize) -> bool {
         self.token_count().await > limit
     }
+
+    /// 撤销最后几条消息
+    async fn undo_last_messages(&self, num_messages: usize);
 }
 
 /// SessionArc - 实现 TaskSession 的 Arc 包装器
@@ -67,6 +73,26 @@ impl TaskSession for SessionArc {
     async fn emit_event(&self, event: Event) {
         let _ = self.event_sender.send(event).await;
     }
+
+    /// 撤销最后几条消息
+    async fn undo_last_messages(&self, num_messages: usize) {
+        let mut history = self.history.lock().await;
+        if num_messages > 0 && history.len() > num_messages {
+            // 创建新的历史记录，移除最后 num_messages 条消息
+            let new_messages: Vec<crate::model::Message> = history
+                .all()
+                .iter()
+                .take(history.len() - num_messages)
+                .cloned()
+                .collect();
+
+            // 清空历史并重新添加消息
+            history.clear();
+            for msg in new_messages {
+                history.push(msg);
+            }
+        }
+    }
 }
 
 /// Session 配置
@@ -77,6 +103,8 @@ pub struct SessionConfig {
     pub default_model: String,
     pub default_cwd: Option<String>,
     pub default_approval_policy: Option<ApprovalPolicy>,
+    pub mcp_manager: Option<Arc<McpManager>>,
+    pub max_undo_steps: usize,
 }
 
 impl Default for SessionConfig {
@@ -87,6 +115,8 @@ impl Default for SessionConfig {
             default_model: "default".to_string(),
             default_cwd: None,
             default_approval_policy: None,
+            mcp_manager: None,
+            max_undo_steps: 10,
         }
     }
 }
@@ -105,6 +135,14 @@ pub struct Session {
     event_sender: mpsc::Sender<Event>,
     config: SessionConfig,
     active_turn: Arc<Mutex<Option<ActiveTurn>>>,
+    undo_stack: Arc<Mutex<VecDeque<UndoSnapshot>>>,
+}
+
+#[derive(Clone, Debug)]
+struct UndoSnapshot {
+    history: ConversationHistory,
+    turn_id: String,
+    timestamp: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -132,6 +170,7 @@ impl Session {
             event_sender,
             config,
             active_turn: Arc::new(Mutex::new(None)),
+            undo_stack: Arc::new(Mutex::new(VecDeque::new())),
         };
 
         let handle = SessionHandle {
@@ -297,6 +336,112 @@ impl SessionHandle {
 
     pub async fn next_event(&self) -> Option<Event> {
         self.event_stream.lock().await.next().await
+    }
+}
+
+// === Session Builder ===
+
+/// Session 构建器
+pub struct SessionBuilder {
+    config: SessionConfig,
+}
+
+impl SessionBuilder {
+    /// 创建一个新的 Session 构建器
+    pub fn new() -> Self {
+        Self {
+            config: SessionConfig::default(),
+        }
+    }
+
+    /// 设置队列缓冲区大小
+    pub fn with_queue_buffer(mut self, buffer: usize) -> Self {
+        self.config.queue_buffer = buffer;
+        self
+    }
+
+    /// 设置事件缓冲区大小
+    pub fn with_event_buffer(mut self, buffer: usize) -> Self {
+        self.config.event_buffer = buffer;
+        self
+    }
+
+    /// 设置默认模型
+    pub fn with_default_model(mut self, model: impl Into<String>) -> Self {
+        self.config.default_model = model.into();
+        self
+    }
+
+    /// 设置默认工作目录
+    pub fn with_default_cwd(mut self, cwd: impl Into<String>) -> Self {
+        self.config.default_cwd = Some(cwd.into());
+        self
+    }
+
+    /// 设置默认批准策略
+    pub fn with_default_approval_policy(mut self, policy: ApprovalPolicy) -> Self {
+        self.config.default_approval_policy = Some(policy);
+        self
+    }
+
+    /// 设置 MCP Manager
+    pub fn with_mcp_manager(mut self, manager: Arc<McpManager>) -> Self {
+        self.config.mcp_manager = Some(manager);
+        self
+    }
+
+    /// 设置最大撤销步数
+    pub fn with_max_undo_steps(mut self, steps: usize) -> Self {
+        self.config.max_undo_steps = steps;
+        self
+    }
+
+    /// 构建 Session
+    pub fn build(self) -> (Session, SessionHandle) {
+        Session::with_config(0, self.config)
+    }
+}
+
+impl Default for SessionBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// === Session 方法增强 ===
+
+impl Session {
+    /// 获取 MCP Manager
+    pub fn get_mcp_manager(&self) -> Option<Arc<McpManager>> {
+        self.config.mcp_manager.clone()
+    }
+
+    /// 创建快照
+    pub async fn create_snapshot(&self) {
+        let history = self.history().await;
+        let snapshot = UndoSnapshot {
+            history,
+            turn_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().timestamp(),
+        };
+
+        let mut stack = self.undo_stack.lock().await;
+        stack.push_back(snapshot);
+        if stack.len() > self.config.max_undo_steps {
+            stack.pop_front();
+        }
+    }
+
+    /// 撤销操作
+    pub async fn undo(&self) -> AgentResult<()> {
+        let mut stack = self.undo_stack.lock().await;
+        if let Some(snapshot) = stack.pop_back() {
+            let mut history = self.history.lock().await;
+            *history = snapshot.history;
+            Ok(())
+        } else {
+            Err(AgentError::Session("No undo history available".to_string()))
+        }
     }
 }
 

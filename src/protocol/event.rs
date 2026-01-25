@@ -53,12 +53,19 @@ pub enum Event {
     ListSkillsResponse { skills: Vec<SkillEntry> },
     /// 线程回滚完成
     ThreadRolledBack { num_turns: u32 },
+    /// 撤销完成
+    UndoPerformed {
+        removed_messages: usize,
+        summary: String,
+    },
     /// 历史条目
     HistoryEntry {
         offset: usize,
         log_id: u64,
         entry: String,
     },
+    /// 运行用户 shell 命令
+    RunUserShellCommand { command: String },
 }
 
 pub type EventStream = ReceiverStream<Event>;

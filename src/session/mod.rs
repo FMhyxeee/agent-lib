@@ -5,5 +5,5 @@ mod state;
 
 pub use context::TurnContext;
 pub use history::{CompactedSummary, ConversationHistory};
-pub use session::{Session, SessionConfig, SessionHandle, TaskSession};
+pub use session::{Session, SessionBuilder, SessionConfig, SessionHandle, TaskSession};
 pub use state::SessionState;

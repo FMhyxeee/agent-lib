@@ -123,6 +123,10 @@ mod tests {
         async fn emit_event(&self, _event: crate::protocol::Event) {
             // Mock implementation
         }
+
+        async fn undo_last_messages(&self, _num_messages: usize) {
+            // Mock implementation
+        }
     }
 
     #[test]
