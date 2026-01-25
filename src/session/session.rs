@@ -13,10 +13,30 @@ use crate::tasks::{RunningTask, SessionTask};
 ///
 /// 这是一个简化的 Session 接口，只包含任务需要的功能。
 #[async_trait::async_trait]
-pub trait TaskSession: Send + Sync {
+pub trait TaskSession: Send + Sync + 'static {
     async fn history(&self) -> ConversationHistory;
     async fn compact_history(&self, keep_recent: usize, summary: String);
     async fn emit_event(&self, event: Event);
+
+    /// 高效的 token 访问，避免完整克隆
+    ///
+    /// 这个方法比调用 `history().total_tokens()` 更高效，
+    /// 因为它不需要克隆整个 ConversationHistory。
+    async fn token_count(&self) -> usize {
+        let history = self.history().await;
+        history.total_tokens()
+    }
+
+    /// 检查是否需要压缩历史
+    ///
+    /// # 参数
+    /// * `limit` - token 限制，超过这个值就需要压缩
+    ///
+    /// # 返回
+    /// 如果当前 token 数超过限制返回 true，否则返回 false
+    async fn should_compact(&self, limit: usize) -> bool {
+        self.token_count().await > limit
+    }
 }
 
 /// SessionArc - 实现 TaskSession 的 Arc 包装器
@@ -127,6 +147,38 @@ impl Session {
     /// 获取对话历史
     pub async fn history(&self) -> ConversationHistory {
         self.history.lock().await.clone()
+    }
+
+    /// 高效的 token 访问，避免完整克隆
+    ///
+    /// 这个方法比调用 `history().total_tokens()` 更高效，
+    /// 因为它不需要克隆整个 ConversationHistory。
+    pub async fn token_count(&self) -> usize {
+        let history = self.history.lock().await;
+        history.total_tokens()
+    }
+
+    /// 带作用域的只读访问，避免不必要的克隆
+    ///
+    /// 这个方法允许在不克隆整个 ConversationHistory 的情况下
+    /// 对历史执行只读操作，性能更优。
+    pub async fn with_history<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&ConversationHistory) -> R,
+    {
+        let history = self.history.lock().await;
+        f(&history)
+    }
+
+    /// 检查是否需要压缩历史
+    ///
+    /// # 参数
+    /// * `limit` - token 限制，超过这个值就需要压缩
+    ///
+    /// # 返回
+    /// 如果当前 token 数超过限制返回 true，否则返回 false
+    pub async fn should_compact(&self, limit: usize) -> bool {
+        self.token_count().await > limit
     }
 
     /// 获取会话状态
