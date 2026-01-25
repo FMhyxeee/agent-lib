@@ -21,7 +21,11 @@ pub enum Event {
     /// 工具调用结果
     ToolCallResult { tool: String, result: ToolResult },
     /// 需要批准
-    ApprovalRequired { request_id: String, tool: String, args: Value },
+    ApprovalRequired {
+        request_id: String,
+        tool: String,
+        args: Value,
+    },
     /// 移交发起
     HandoffInitiated { from: String, to: String },
     /// Turn 完成
@@ -31,7 +35,10 @@ pub enum Event {
 
     // === 新增 Event ===
     /// Session 已配置
-    SessionConfigured { rollout_path: String, thread_id: String },
+    SessionConfigured {
+        rollout_path: String,
+        thread_id: String,
+    },
     /// Turn 中止
     TurnAborted { reason: TurnAbortReason },
     /// 上下文已压缩
@@ -47,7 +54,11 @@ pub enum Event {
     /// 线程回滚完成
     ThreadRolledBack { num_turns: u32 },
     /// 历史条目
-    HistoryEntry { offset: usize, log_id: u64, entry: String },
+    HistoryEntry {
+        offset: usize,
+        log_id: u64,
+        entry: String,
+    },
 }
 
 pub type EventStream = ReceiverStream<Event>;

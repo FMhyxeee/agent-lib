@@ -87,9 +87,7 @@ pub enum UserInputItem {
 impl UserInputItem {
     /// 创建文本输入项
     pub fn text(text: impl Into<String>) -> Self {
-        Self::Text {
-            text: text.into(),
-        }
+        Self::Text { text: text.into() }
     }
 
     /// 创建图片输入项
@@ -134,7 +132,9 @@ pub struct McpServerRefreshConfig {
 
 impl Default for McpServerRefreshConfig {
     fn default() -> Self {
-        Self { force_reload: false }
+        Self {
+            force_reload: false,
+        }
     }
 }
 

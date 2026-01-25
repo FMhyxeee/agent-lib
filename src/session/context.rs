@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::protocol::{
-    ApprovalPolicy, CollaborationMode, ReasoningEffort, ReasoningSummary,
-};
+use crate::protocol::{ApprovalPolicy, CollaborationMode, ReasoningEffort, ReasoningSummary};
 use crate::token::TruncationPolicy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,7 +167,10 @@ mod tests {
         assert_eq!(ctx.model, "gpt-4");
         assert_eq!(ctx.cwd, Some("/home/user".to_string()));
         assert_eq!(ctx.approval_policy_v2, Some(ApprovalPolicy::NeverAsk));
-        assert_eq!(ctx.sandbox_policy_v2, Some(crate::protocol::SandboxPolicy::Readonly));
+        assert_eq!(
+            ctx.sandbox_policy_v2,
+            Some(crate::protocol::SandboxPolicy::Readonly)
+        );
         assert_eq!(ctx.reasoning_effort, Some(ReasoningEffort::High));
         assert_eq!(ctx.context_window, 200000);
         assert_eq!(ctx.auto_compact_token_limit, Some(50000));
@@ -177,8 +178,7 @@ mod tests {
 
     #[test]
     fn test_get_approval_policy() {
-        let ctx = TurnContext::new("test")
-            .with_approval_policy(ApprovalPolicy::ReadOnlySafe);
+        let ctx = TurnContext::new("test").with_approval_policy(ApprovalPolicy::ReadOnlySafe);
         assert_eq!(ctx.get_approval_policy(), ApprovalPolicy::ReadOnlySafe);
 
         let ctx2 = TurnContext::new("test");
@@ -187,12 +187,18 @@ mod tests {
 
     #[test]
     fn test_get_sandbox_policy() {
-        let ctx = TurnContext::new("test")
-            .with_sandbox_policy(crate::protocol::SandboxPolicy::InMemory);
-        assert_eq!(ctx.get_sandbox_policy(), crate::protocol::SandboxPolicy::InMemory);
+        let ctx =
+            TurnContext::new("test").with_sandbox_policy(crate::protocol::SandboxPolicy::InMemory);
+        assert_eq!(
+            ctx.get_sandbox_policy(),
+            crate::protocol::SandboxPolicy::InMemory
+        );
 
         let ctx2 = TurnContext::new("test");
-        assert_eq!(ctx2.get_sandbox_policy(), crate::protocol::SandboxPolicy::Persistent); // default
+        assert_eq!(
+            ctx2.get_sandbox_policy(),
+            crate::protocol::SandboxPolicy::Persistent
+        ); // default
     }
 
     #[test]
