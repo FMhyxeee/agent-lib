@@ -85,8 +85,12 @@ impl SessionTask for RegularTask {
         let response = match session.chat_model(messages, Vec::<ToolDef>::new()).await {
             Ok(resp) => resp,
             Err(e) => {
-                debug!("[{}] Model call failed: {:?}", turn_id, e);
-                session.emit_event(Event::Error { error: e }).await;
+                let error_msg = format!("{:?}", e);
+                debug!("[{}] Model call failed: {}", turn_id, error_msg);
+                session.emit_event(Event::Error { error: e.clone() }).await;
+                session.emit_event(Event::ModelStreaming {
+                    chunk: format!("[ERROR: {}]\n", error_msg),
+                }).await;
                 return None;
             }
         };

@@ -22,6 +22,10 @@ impl SubmissionQueue {
     pub async fn submit(&self, op: Op) -> Result<(), mpsc::error::SendError<Op>> {
         self.sender.send(op).await
     }
+
+    pub fn clone_sender(&self) -> mpsc::Sender<Op> {
+        self.sender.clone()
+    }
 }
 
 impl EventQueue {

@@ -68,19 +68,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_glm_47_config() {
-        let config = get_model_config("glm-4.7").unwrap();
-        assert_eq!(config.id, "glm-4.7");
+    fn test_glm_4_config() {
+        let config = get_model_config("glm-4").unwrap();
+        assert_eq!(config.id, "glm-4");
         assert_eq!(config.context_window, 200_000);
         assert_eq!(config.provider, "glm");
     }
 
     #[test]
-    fn test_glm_flashx_config() {
-        let config = get_model_config("glm-4.7-flashx").unwrap();
-        assert_eq!(config.id, "glm-4.7-flashx");
+    fn test_glm_flash_config() {
+        let config = get_model_config("glm-4-flash").unwrap();
+        assert_eq!(config.id, "glm-4-flash");
         assert_eq!(config.context_window, 200_000);
-        assert_eq!(config.display_name, "GLM-4.7-FlashX");
+        assert_eq!(config.display_name, "GLM-4-FlashX");
     }
 
     #[test]
@@ -91,8 +91,8 @@ mod tests {
 
     #[test]
     fn test_is_model_supported() {
-        assert!(is_model_supported("glm-4.7"));
-        assert!(is_model_supported("glm-4.7-flashx"));
+        assert!(is_model_supported("glm-4"));
+        assert!(is_model_supported("glm-4-flash"));
         assert!(!is_model_supported("gpt-4"));
     }
 

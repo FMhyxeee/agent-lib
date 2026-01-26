@@ -245,7 +245,15 @@ impl Session {
             event_stream: Arc::new(Mutex::new(event_stream)),
         };
 
-        tokio::spawn(session_loop(op_receiver, session.event_sender.clone()));
+        // 启动增强的 session_loop (支持 RegularTask)
+        tokio::spawn(session_loop_enhanced(
+            Arc::new(SessionArc {
+                history: Arc::clone(&session.history),
+                event_sender: session.event_sender.clone(),
+                model: session.model.clone(),
+            }),
+            op_receiver,
+        ));
 
         (session, handle)
     }
@@ -562,6 +570,127 @@ async fn session_loop(mut op_receiver: mpsc::Receiver<Op>, event_sender: mpsc::S
             }
             _ => {
                 // 忽略其他 Op
+            }
+        }
+    }
+}
+
+/// 增强的 session_loop - 支持 UserTurn 和模型调用
+async fn session_loop_enhanced(
+    sess: Arc<SessionArc>,
+    mut op_receiver: mpsc::Receiver<Op>,
+) {
+    use crate::protocol::{Event, Op, UserInputItem};
+
+    while let Some(op) = op_receiver.recv().await {
+        // 发送 TurnStarted 事件
+        let turn_id = uuid::Uuid::new_v4().to_string();
+        let _ = sess
+            .emit_event(Event::TurnStarted { turn_id: turn_id.clone() })
+            .await;
+
+        match op {
+            Op::UserTurn {
+                items,
+                model: _model,
+                ..
+            } => {
+                // 处理 UserTurn - 直接调用模型
+                for item in items {
+                    if let UserInputItem::Text { text } = item {
+                        let mut history = sess.history().await;
+                        history.push(crate::model::Message::user(text.clone()));
+
+                        // 准备消息
+                        let messages = history.for_prompt();
+
+                        // 发送 Thinking 事件
+                        let _ = sess
+                            .emit_event(Event::ModelStreaming {
+                                chunk: format!("[{}] Thinking...\n", turn_id),
+                            })
+                            .await;
+
+                        // 调用模型
+                        match sess.chat_model(messages, vec![]).await {
+                            Ok(response) => {
+                                // 分块发送响应 (UTF-8 安全)
+                                let chunk_size = 20;
+                                let mut current_chunk = String::new();
+                                for ch in response.content.chars() {
+                                    current_chunk.push(ch);
+                                    if current_chunk.chars().count() >= chunk_size {
+                                        let _ = sess
+                                            .emit_event(Event::ModelStreaming {
+                                                chunk: current_chunk.clone(),
+                                            })
+                                            .await;
+                                        current_chunk.clear();
+                                    }
+                                }
+                                if !current_chunk.is_empty() {
+                                    let _ = sess
+                                        .emit_event(Event::ModelStreaming {
+                                            chunk: current_chunk,
+                                        })
+                                        .await;
+                                }
+
+                                // 发送完成事件
+                                let _ = sess
+                                    .emit_event(Event::ModelComplete {
+                                        content: response.content,
+                                        usage: response.usage,
+                                    })
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _ = sess
+                                    .emit_event(Event::ModelStreaming {
+                                        chunk: format!("[ERROR: {:?}]\n", e),
+                                    })
+                                    .await;
+                                let _ = sess.emit_event(Event::Error { error: e }).await;
+                            }
+                        }
+                    }
+                }
+            }
+            Op::UserInput { content } => {
+                let _ = sess
+                    .emit_event(Event::ModelStreaming { chunk: content })
+                    .await;
+            }
+            Op::ApprovalResponse { request_id, .. } => {
+                let _ = sess
+                    .emit_event(Event::ToolCallResult {
+                        tool: "approval".to_string(),
+                        result: crate::tools::ToolResult::text(format!(
+                            "approval response: {request_id}"
+                        )),
+                    })
+                    .await;
+            }
+            Op::Interrupt => {
+                let _ = sess
+                    .emit_event(Event::Error {
+                        error: AgentError::Session("session interrupted".to_string()),
+                    })
+                    .await;
+            }
+            Op::Handoff { target_agent, .. } => {
+                let _ = sess
+                    .emit_event(Event::HandoffInitiated {
+                        from: "session".to_string(),
+                        to: target_agent,
+                    })
+                    .await;
+            }
+            _ => {
+                // 其他 Op 发送警告
+                let _ = sess.emit_event(Event::Warning {
+                    message: format!("Unhandled Op: {:?}", std::mem::discriminant(&op)),
+                }).await;
             }
         }
     }

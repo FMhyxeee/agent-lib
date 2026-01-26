@@ -310,17 +310,19 @@ async fn handle_user_input_or_turn(
                 context_window: base_ctx.context_window,
             };
 
-            *previous_context = Some(Arc::new(new_ctx));
+            *previous_context = Some(Arc::new(new_ctx.clone()));
 
-            // 处理输入项
+            // 处理输入项 - 将文本添加到历史并启动模型调用
+            let mut has_text_input = false;
             for item in items {
                 match item {
                     crate::protocol::UserInputItem::Text { text } => {
-                        // 文本输入，直接流式输出
-                        sess.emit_event(Event::ModelStreaming { chunk: text }).await;
+                        // 添加到历史
+                        let mut history = sess.history().await;
+                        history.push(crate::model::Message::user(text.clone()));
+                        has_text_input = true;
                     }
                     crate::protocol::UserInputItem::Image { path } => {
-                        // 图片输入
                         debug!("Image input: {:?}", path);
                         sess.emit_event(Event::Warning {
                             message: format!("Image input received: {:?}", path),
@@ -328,7 +330,6 @@ async fn handle_user_input_or_turn(
                         .await;
                     }
                     crate::protocol::UserInputItem::File { path } => {
-                        // 文件输入
                         debug!("File input: {:?}", path);
                         sess.emit_event(Event::Warning {
                             message: format!("File input received: {:?}", path),
@@ -336,12 +337,17 @@ async fn handle_user_input_or_turn(
                         .await;
                     }
                     crate::protocol::UserInputItem::Command { command } => {
-                        // 命令输入
                         debug!("Command input: {}", command);
                         sess.emit_event(Event::RunUserShellCommand { command })
                             .await;
                     }
                 }
+            }
+
+            // 如果有文本输入，启动 RegularTask 调用模型
+            if has_text_input {
+                use crate::tasks::RegularTask;
+                sess.spawn_task(Arc::new(new_ctx), RegularTask).await;
             }
         }
         Op::UserInputLegacy {
@@ -349,16 +355,24 @@ async fn handle_user_input_or_turn(
             final_output_json_schema,
         } => {
             // 遗留格式支持
+            let mut ctx_clone = (*ctx).clone();
             if let Some(schema) = final_output_json_schema {
-                let mut ctx_clone = (*ctx).clone();
                 ctx_clone.final_output_json_schema = Some(schema);
-                *previous_context = Some(Arc::new(ctx_clone));
             }
+            *previous_context = Some(Arc::new(ctx_clone.clone()));
 
+            let mut has_text_input = false;
             for item in items {
                 if let crate::protocol::UserInputItem::Text { text } = item {
-                    sess.emit_event(Event::ModelStreaming { chunk: text }).await;
+                    let mut history = sess.history().await;
+                    history.push(crate::model::Message::user(text));
+                    has_text_input = true;
                 }
+            }
+
+            if has_text_input {
+                use crate::tasks::RegularTask;
+                sess.spawn_task(Arc::new(ctx_clone), RegularTask).await;
             }
         }
         _ => {
