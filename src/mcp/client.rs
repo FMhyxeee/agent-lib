@@ -3,7 +3,10 @@ use serde_json::json;
 use std::time::Duration;
 
 use crate::error::{AgentError, AgentResult};
-use crate::mcp::{McpRequest, McpResponse, McpTool, McpToolCall, McpTransport};
+use crate::mcp::{
+    McpPrompt, McpPromptResult, McpRequest, McpResource, McpResourceContent, McpResponse,
+    McpTool, McpToolCall, McpTransport,
+};
 
 #[derive(Debug)]
 pub struct McpClient {
@@ -85,5 +88,82 @@ impl McpClient {
 
     async fn send(&self, _request: McpRequest) -> AgentResult<McpResponse> {
         self.transport.send(_request).await
+    }
+
+    // === Resources (MCP 协议) ===
+
+    /// 列出所有可用资源
+    pub async fn list_resources(&self) -> AgentResult<Vec<McpResource>> {
+        let response = self
+            .send(McpRequest {
+                id: "resources.list".to_string(),
+                method: "resources/list".to_string(),
+                params: json!({}),
+            })
+            .await?;
+
+        let result = response.result;
+        let resources = serde_json::from_value::<Vec<McpResource>>(result)
+            .map_err(|err| AgentError::Mcp(format!("invalid resources list: {err}")))?;
+        Ok(resources)
+    }
+
+    /// 读取资源内容
+    pub async fn read_resource(&self, uri: String) -> AgentResult<McpResourceContent> {
+        let response = self
+            .send(McpRequest {
+                id: "resources.read".to_string(),
+                method: "resources/read".to_string(),
+                params: json!({ "uri": uri }),
+            })
+            .await?;
+
+        let result = response.result;
+        let content = serde_json::from_value::<McpResourceContent>(result)
+            .map_err(|err| AgentError::Mcp(format!("invalid resource content: {err}")))?;
+        Ok(content)
+    }
+
+    // === Prompts (MCP 协议) ===
+
+    /// 列出所有可用提示
+    pub async fn list_prompts(&self) -> AgentResult<Vec<McpPrompt>> {
+        let response = self
+            .send(McpRequest {
+                id: "prompts.list".to_string(),
+                method: "prompts/list".to_string(),
+                params: json!({}),
+            })
+            .await?;
+
+        let result = response.result;
+        let prompts = serde_json::from_value::<Vec<McpPrompt>>(result)
+            .map_err(|err| AgentError::Mcp(format!("invalid prompts list: {err}")))?;
+        Ok(prompts)
+    }
+
+    /// 获取提示内容
+    pub async fn get_prompt(
+        &self,
+        name: String,
+        arguments: Option<Value>,
+    ) -> AgentResult<McpPromptResult> {
+        let mut params = json!({ "name": name });
+        if let Some(args) = arguments {
+            params["arguments"] = args;
+        }
+
+        let response = self
+            .send(McpRequest {
+                id: "prompts.get".to_string(),
+                method: "prompts/get".to_string(),
+                params,
+            })
+            .await?;
+
+        let result = response.result;
+        let prompt_result = serde_json::from_value::<McpPromptResult>(result)
+            .map_err(|err| AgentError::Mcp(format!("invalid prompt result: {err}")))?;
+        Ok(prompt_result)
     }
 }

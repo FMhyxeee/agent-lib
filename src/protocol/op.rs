@@ -98,6 +98,10 @@ pub fn is_mcp_related(op: &Op) -> bool {
     matches!(
         op,
         Op::ListMcpTools
+            | Op::ListMcpResources
+            | Op::ReadMcpResource { .. }
+            | Op::ListMcpPrompts
+            | Op::GetMcpPrompt { .. }
             | Op::RefreshMcpServers { .. }
             | Op::ListCustomPrompts
             | Op::ListSkills { .. }
@@ -194,6 +198,14 @@ pub enum Op {
     // === MCP 协议操作 ===
     /// 列出 MCP 工具
     ListMcpTools,
+    /// 列出 MCP 资源
+    ListMcpResources,
+    /// 读取 MCP 资源
+    ReadMcpResource { uri: String },
+    /// 列出 MCP 提示
+    ListMcpPrompts,
+    /// 获取 MCP 提示
+    GetMcpPrompt { name: String, arguments: Option<Value> },
     /// 刷新 MCP 服务器
     RefreshMcpServers { config: McpServerRefreshConfig },
     /// 列出自定义提示

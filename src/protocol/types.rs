@@ -165,6 +165,48 @@ pub struct ModelInfo {
     pub provider: String,
 }
 
+/// MCP 资源信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpResourceInfo {
+    pub uri: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub mime_type: Option<String>,
+}
+
+/// MCP 提示信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpPromptInfo {
+    pub name: String,
+    pub description: Option<String>,
+    pub arguments: Option<Vec<PromptArgumentInfo>>,
+}
+
+/// 提示参数信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptArgumentInfo {
+    pub name: String,
+    pub description: Option<String>,
+    pub required: bool,
+}
+
+/// 提示消息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptMessage {
+    pub role: String,
+    pub content: PromptContent,
+}
+
+/// 提示内容
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PromptContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image")]
+    Image { data: String, mime_type: String },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

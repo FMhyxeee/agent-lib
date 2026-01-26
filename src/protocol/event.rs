@@ -4,7 +4,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::AgentError;
 use crate::model::TokenUsage;
-use crate::protocol::{CompactedItem, CustomPromptInfo, McpToolInfo, ModelInfo, SkillEntry, TurnAbortReason};
+use crate::protocol::{CompactedItem, CustomPromptInfo, McpPromptInfo, McpResourceInfo, McpToolInfo, ModelInfo, PromptMessage, SkillEntry, TurnAbortReason};
 use crate::tools::ToolResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +47,14 @@ pub enum Event {
     Warning { message: String },
     /// MCP 工具列表响应
     McpListToolsResponse { tools: Vec<McpToolInfo> },
+    /// MCP 资源列表响应
+    McpListResourcesResponse { resources: Vec<McpResourceInfo> },
+    /// MCP 资源内容响应
+    McpResourceContent { uri: String, content: String },
+    /// MCP 提示列表响应
+    McpListPromptsResponse { prompts: Vec<McpPromptInfo> },
+    /// MCP 提示获取响应
+    McpPromptResult { messages: Vec<PromptMessage> },
     /// 自定义提示列表响应
     ListCustomPromptsResponse { prompts: Vec<CustomPromptInfo> },
     /// 技能列表响应
