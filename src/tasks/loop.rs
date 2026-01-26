@@ -1152,15 +1152,16 @@ async fn scan_prompts_directory(dir: &std::path::Path) -> std::io::Result<Vec<cr
 async fn handle_list_models(sess: &Session) {
     debug!("Handling list models");
 
-    // TODO: 实现模型列表功能
-    // 当前返回默认模型
-    let models = vec![
-        crate::protocol::ModelInfo {
-            id: "default".to_string(),
-            name: "Default Model".to_string(),
-            provider: "builtin".to_string(),
-        },
-    ];
+    // 返回固定配置的模型列表
+    let fixed_models = crate::model::list_models();
+    let models = fixed_models
+        .iter()
+        .map(|m| crate::protocol::ModelInfo {
+            id: m.id.to_string(),
+            name: m.display_name.to_string(),
+            provider: m.provider.to_string(),
+        })
+        .collect();
 
     sess.emit_event(crate::protocol::Event::ModelsListed { models })
         .await;

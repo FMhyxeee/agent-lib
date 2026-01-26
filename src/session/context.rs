@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::model::get_context_window;
 use crate::protocol::{ApprovalPolicy, CollaborationMode, ReasoningEffort, ReasoningSummary};
 use crate::token::TruncationPolicy;
 
@@ -68,16 +69,21 @@ impl Default for TurnContext {
             final_output_json_schema: None,
             truncation_policy: None,
             auto_compact_token_limit: None,
-            context_window: 128000, // 默认上下文窗口
+            context_window: 200_000, // 默认上下文窗口 (GLM 模型)
         }
     }
 }
 
 impl TurnContext {
     /// 创建新的 TurnContext
+    /// 自动根据模型名称设置 context_window
     pub fn new(model: impl Into<String>) -> Self {
+        let model_id = model.into();
+        let context_window = get_context_window(&model_id);
+
         Self {
-            model: model.into(),
+            model: model_id,
+            context_window,
             ..Default::default()
         }
     }
@@ -143,7 +149,7 @@ mod tests {
     fn test_turn_context_default() {
         let ctx = TurnContext::default();
         assert_eq!(ctx.model, "default");
-        assert_eq!(ctx.context_window, 128000);
+        assert_eq!(ctx.context_window, 200_000); // GLM 模型默认 200K
         assert!(ctx.approval_policy_v2.is_none());
         assert!(ctx.sandbox_policy_v2.is_none());
     }
