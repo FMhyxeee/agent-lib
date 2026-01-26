@@ -706,3 +706,192 @@ async fn handle_approval_response(sess: &Session, request_id: String, approved: 
         .await;
     }
 }
+
+/// 处理 Agent 移交
+async fn handle_handoff(sess: &Session, target_agent: String, context: serde_json::Value) {
+    debug!(target_agent = %target_agent, "Handling handoff");
+
+    // 获取当前状态
+    let current_state = sess.history().await;
+    let state_json = serde_json::to_value(&current_state)
+        .unwrap_or_else(|_| serde_json::json!({}));
+
+    // 构建移交上下文
+    let handoff_context = serde_json::json!({
+        "source": "current_session",
+        "target": target_agent,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "history": state_json,
+        "user_context": context,
+    });
+
+    // 发送移交发起事件
+    sess.emit_event(crate::protocol::Event::HandoffInitiated {
+        from: "current_session".to_string(),
+        to: target_agent.clone(),
+    })
+    .await;
+
+    // 记录移交日志
+    debug!(
+        from = "current_session",
+        to = target_agent,
+        context = ?handoff_context,
+        "Handoff initiated"
+    );
+
+    // TODO: 如果有 Agent 注册表，这里可以通知目标 Agent
+    // if let Some(target) = AGENT_REGISTRY.get(&target_agent) {
+    //     target.receive_handoff(handoff_context).await?;
+    // }
+
+    // 发送完成事件
+    sess.emit_event(crate::protocol::Event::TurnComplete {
+        result: serde_json::json!({"handoff": target_agent}),
+    })
+    .await;
+}
+
+/// 处理用户输入响应
+async fn handle_user_input_answer(
+    sess: &Session,
+    id: String,
+    response: crate::protocol::UserInputResponse,
+) {
+    debug!(id = %id, "Handling user input answer");
+
+    match response {
+        crate::protocol::UserInputResponse::Text(text) => {
+            // 添加到历史
+            sess.emit_event(crate::protocol::Event::ModelStreaming {
+                chunk: format!("User answered: {}", text),
+            })
+            .await;
+        }
+        crate::protocol::UserInputResponse::Cancel => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: "User cancelled the input".to_string(),
+            })
+            .await;
+        }
+    }
+}
+
+/// 处理代码审查请求
+async fn handle_review(
+    sess: &Session,
+    review_request: crate::protocol::ReviewRequest,
+) {
+    debug!(content = %review_request.content, "Handling review request");
+
+    // 发送审查事件
+    sess.emit_event(crate::protocol::Event::Warning {
+        message: format!(
+            "Review request received: {} chars",
+            review_request.content.len()
+        ),
+    })
+    .await;
+
+    // TODO: 实际的代码审查逻辑
+    // 1. 解析代码内容
+    // 2. 运行审查器
+    // 3. 返回审查结果
+
+    sess.emit_event(crate::protocol::Event::ToolCallResult {
+        tool: "review".to_string(),
+        result: crate::tools::ToolResult::text(
+            "Review request processed".to_string(),
+        ),
+    })
+    .await;
+}
+
+/// 处理历史条目请求
+async fn handle_get_history_entry_request(
+    sess: &Session,
+    offset: usize,
+    log_id: u64,
+) {
+    debug!(offset = offset, log_id = log_id, "Handling get history entry request");
+
+    let history = sess.history().await;
+    let entries = history.all();
+
+    if offset < entries.len() {
+        let entry = &entries[offset];
+        sess.emit_event(crate::protocol::Event::HistoryEntry {
+            offset,
+            log_id,
+            entry: serde_json::to_string(entry).unwrap_or_else(|_| {
+                format!("{:?}", entry)
+            }),
+        })
+        .await;
+    } else {
+        sess.emit_event(crate::protocol::Event::Error {
+            error: crate::error::AgentError::Tool(format!(
+                "History entry not found at offset {}",
+                offset
+            )),
+        })
+        .await;
+    }
+}
+
+/// 处理列出技能请求
+async fn handle_list_skills(
+    sess: &Session,
+    cwds: Vec<std::path::PathBuf>,
+    force_reload: bool,
+) {
+    debug!(cwds = ?cwds, force_reload = force_reload, "Handling list skills");
+
+    // TODO: 实现从指定目录加载技能
+    // 当前返回空列表
+    let skills: Vec<crate::protocol::SkillEntry> = Vec::new();
+
+    sess.emit_event(crate::protocol::Event::ListSkillsResponse {
+        skills,
+    })
+    .await;
+
+    if force_reload {
+        sess.emit_event(crate::protocol::Event::Warning {
+            message: "Skills cache refreshed".to_string(),
+        })
+        .await;
+    }
+}
+
+/// 处理列出自定义提示请求
+async fn handle_list_custom_prompts(sess: &Session) {
+    debug!("Handling list custom prompts");
+
+    // TODO: 实现自定义提示管理
+    // 当前返回空列表
+    let prompts: Vec<crate::protocol::CustomPromptInfo> = Vec::new();
+
+    sess.emit_event(crate::protocol::Event::ListCustomPromptsResponse {
+        prompts,
+    })
+    .await;
+}
+
+/// 处理列出模型请求
+async fn handle_list_models(sess: &Session) {
+    debug!("Handling list models");
+
+    // TODO: 实现模型列表功能
+    // 当前返回默认模型
+    let models = vec![
+        crate::protocol::ModelInfo {
+            id: "default".to_string(),
+            name: "Default Model".to_string(),
+            provider: "builtin".to_string(),
+        },
+    ];
+
+    sess.emit_event(crate::protocol::Event::ModelsListed { models })
+        .await;
+}

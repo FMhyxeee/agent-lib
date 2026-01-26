@@ -4,7 +4,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::AgentError;
 use crate::model::TokenUsage;
-use crate::protocol::{CompactedItem, CustomPromptInfo, McpToolInfo, SkillEntry, TurnAbortReason};
+use crate::protocol::{CompactedItem, CustomPromptInfo, McpToolInfo, ModelInfo, SkillEntry, TurnAbortReason};
 use crate::tools::ToolResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +66,8 @@ pub enum Event {
     },
     /// 运行用户 shell 命令
     RunUserShellCommand { command: String },
+    /// 模型列表响应
+    ModelsListed { models: Vec<ModelInfo> },
 }
 
 pub type EventStream = ReceiverStream<Event>;

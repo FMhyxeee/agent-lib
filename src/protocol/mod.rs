@@ -9,6 +9,6 @@ pub use op::{compact, interrupt, shutdown, undo, user_turn, user_turn_with_confi
 pub use queue::{EventQueue, SubmissionQueue};
 pub use types::{
     ApprovalPolicy, CollaborationMode, CompactedItem, CustomPromptInfo, McpServerRefreshConfig,
-    McpToolInfo, ReasoningEffort, ReasoningSummary, ReviewDecision, ReviewRequest, SandboxPolicy,
-    SkillEntry, TurnAbortReason, UserInputItem, UserInputResponse,
+    McpToolInfo, ModelInfo, ReasoningEffort, ReasoningSummary, ReviewDecision, ReviewRequest,
+    SandboxPolicy, SkillEntry, TurnAbortReason, UserInputItem, UserInputResponse,
 };

@@ -157,6 +157,14 @@ pub struct CompactedItem {
     pub original_token_count: usize,
 }
 
+/// 模型信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
