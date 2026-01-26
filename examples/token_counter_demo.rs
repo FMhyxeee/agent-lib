@@ -1,8 +1,8 @@
 //! Token Counting Demo
 //!
-//! 演示近似计数与精确 tiktoken 计数的差异
+//! 演示精确的 tiktoken token 计数功能
 
-use agent_lib::token::{approx_token_count, tiktoken_count, TokenCounter};
+use agent_lib::token::{count_tokens, TokenCounter};
 
 fn main() {
     let texts = [
@@ -13,33 +13,17 @@ fn main() {
         "Function calculate_sum(a: i32, b: i32) -> i32 { a + b }",
     ];
 
-    println!("=== Token Counting Comparison ===\n");
+    println!("=== Precise Token Counting (cl100k_base BPE) ===\n");
 
     for text in texts {
-        let approx = approx_token_count(text);
-        let precise = tiktoken_count(text);
-        let diff = if precise > approx {
-            precise as i32 - approx as i32
-        } else {
-            approx as i32 - precise as i32
-        };
-        let error_pct = (diff as f64 / precise as f64) * 100.0;
-
+        let count = count_tokens(text);
         println!("Text: \"{}\"", text);
-        println!("  Approx:    {} tokens", approx);
-        println!("  Tiktoken:  {} tokens", precise);
-        println!("  Diff:      {} tokens ({:.1}%)", diff, error_pct);
-        println!();
+        println!("  Tokens: {}\n", count);
     }
 
-    println!("=== TokenCounter Modes ===");
-    let counter_approx = TokenCounter::with_approx();
-    let counter_tiktoken = TokenCounter::with_tiktoken();
-    let counter_auto = TokenCounter::auto();
-
-    println!("  Approx mode:  {}", counter_approx.mode_name());
-    println!("  Tiktoken mode: {}", counter_tiktoken.mode_name());
-    println!("  Auto mode:    {}", counter_auto.mode_name());
+    println!("=== TokenCounter API ===");
+    let counter = TokenCounter::new();
+    println!("  Mode: {}", counter.mode_name());
 
     // 示例：计算对话历史
     println!("\n=== Conversation Example ===");
@@ -50,10 +34,19 @@ fn main() {
         "Assistant: Rust 的所有权是一种内存管理机制...",
     ];
 
-    let total_approx: usize = conversation.iter().map(|s| approx_token_count(s)).sum();
-    let total_precise: usize = conversation.iter().map(|s| tiktoken_count(s)).sum();
+    let total: usize = conversation.iter().map(|s| count_tokens(s)).sum();
+    println!("  Total tokens: {}", total);
 
-    println!("  Total (approx):  {} tokens", total_approx);
-    println!("  Total (precise): {} tokens", total_precise);
-    println!("  Difference:      {} tokens", total_precise as i32 - total_approx as i32);
+    // 字节估算 vs 实际计数
+    println!("\n=== Byte Estimation vs Actual ===");
+    let text = "这是一个测试文本，用于比较字节数和实际 token 数的差异。";
+    let byte_count = text.len();
+    let estimated = counter.estimate_from_bytes(byte_count);
+    let actual = count_tokens(text);
+
+    println!("  Text: \"{}\"", text);
+    println!("  Bytes: {}", byte_count);
+    println!("  Estimated: {} tokens", estimated);
+    println!("  Actual: {} tokens", actual);
+    println!("  Error: {:.1}%", (estimated.abs_diff(actual) as f64 / actual as f64) * 100.0);
 }

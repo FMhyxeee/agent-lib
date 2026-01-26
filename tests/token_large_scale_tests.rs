@@ -206,7 +206,7 @@ mod large_scale_tests {
 
     #[test]
     fn test_token_counter_batch_large() {
-        let counter = TokenCounter::auto();
+        let counter = TokenCounter::new();
         let texts: Vec<String> = (0..1000)
             .map(|i| format!("Test message number {}", i))
             .collect();

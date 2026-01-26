@@ -1,5 +1,5 @@
 mod counter;
 mod policy;
 
-pub use counter::{TokenCounter, approx_token_count, tiktoken_count};
+pub use counter::{TokenCounter, count_tokens};
 pub use policy::{TruncationMode, TruncationPolicy};

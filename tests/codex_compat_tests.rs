@@ -12,9 +12,7 @@ use agent_lib::protocol::{
 };
 use agent_lib::session::{Session, SessionConfig, TurnContext};
 use agent_lib::tasks::{CompactTask, Submission, TaskKind};
-use agent_lib::token::{
-    TokenCounter, TruncationMode, TruncationPolicy, approx_token_count, tiktoken_count,
-};
+use agent_lib::token::{TokenCounter, TruncationMode, TruncationPolicy, count_tokens};
 use tokio::sync::mpsc;
 
 #[tokio::test]
@@ -151,7 +149,7 @@ fn test_truncation_policy_bytes() {
 
 #[test]
 fn test_token_counter_consistency() {
-    let counter = TokenCounter::with_approx();
+    let counter = TokenCounter::new();
     let text = "Hello, world! This is a test.";
 
     let count1 = counter.count(text);
@@ -162,21 +160,21 @@ fn test_token_counter_consistency() {
 }
 
 #[test]
-fn test_approx_token_count_with_empty() {
-    assert_eq!(approx_token_count(""), 0);
+fn test_count_tokens_with_empty() {
+    assert_eq!(count_tokens(""), 0);
 }
 
 #[test]
-fn test_approx_token_count_with_unicode() {
-    let text = "你好世界"; // 12 bytes
-    let count = approx_token_count(text);
+fn test_count_tokens_with_unicode() {
+    let text = "你好世界";
+    let count = count_tokens(text);
     assert!(count > 0);
 }
 
 #[test]
-fn test_tiktoken_count_non_empty() {
-    let count = tiktoken_count("Hello, world!");
-    assert!(count > 0);
+fn test_count_tokens_english() {
+    let count = count_tokens("Hello, world!");
+    assert_eq!(count, 4); // "Hello," + " world!" + "!" = 4 tokens with cl100k_base
 }
 
 #[tokio::test]

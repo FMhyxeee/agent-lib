@@ -86,7 +86,7 @@ mod concurrent_tests {
 
     #[tokio::test]
     async fn test_concurrent_token_counter() {
-        let counter = Arc::new(TokenCounter::auto());
+        let counter = Arc::new(TokenCounter::new());
         let mut handles = vec![];
         let results = Arc::new(Mutex::new(Vec::new()));
 
