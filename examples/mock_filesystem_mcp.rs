@@ -129,9 +129,7 @@ async fn test_session_with_mcp() -> AgentResult<()> {
 
     // 4. 测试发送 ListMcpTools Op
     println!("\n--- 测试 ListMcpTools Op ---");
-    handle
-        .submit(Op::ListMcpTools)
-        .await?;
+    handle.submit(Op::ListMcpTools).await?;
 
     // 等待事件
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -140,7 +138,9 @@ async fn test_session_with_mcp() -> AgentResult<()> {
     println!("\n--- 测试 RefreshMcpServers Op ---");
     handle
         .submit(Op::RefreshMcpServers {
-            config: McpServerRefreshConfig { force_reload: false },
+            config: McpServerRefreshConfig {
+                force_reload: false,
+            },
         })
         .await?;
 
@@ -156,26 +156,21 @@ async fn test_session_with_mcp() -> AgentResult<()> {
         let mut count = 0;
         // 只接收前几个事件，然后退出
         while count < 10 {
-            match tokio::time::timeout(
-                tokio::time::Duration::from_millis(500),
-                handle.next_event(),
-            )
-            .await
+            match tokio::time::timeout(tokio::time::Duration::from_millis(500), handle.next_event())
+                .await
             {
-                Ok(Some(event)) => {
-                    match event {
-                        Event::TurnStarted { .. } => {
-                            count += 1;
-                        }
-                        Event::McpListToolsResponse { .. } => {
-                            count += 1;
-                        }
-                        Event::Error { .. } => {
-                            count += 1;
-                        }
-                        _ => {}
+                Ok(Some(event)) => match event {
+                    Event::TurnStarted { .. } => {
+                        count += 1;
                     }
-                }
+                    Event::McpListToolsResponse { .. } => {
+                        count += 1;
+                    }
+                    Event::Error { .. } => {
+                        count += 1;
+                    }
+                    _ => {}
+                },
                 Ok(None) => break,
                 Err(_) => break,
             }
@@ -219,9 +214,7 @@ async fn test_mock_fileserver_direct() -> AgentResult<()> {
     println!("✓ 列出目录 /demo: {:?}", entries);
 
     // 测试写入
-    let result = server
-        .write_file("/demo/new.txt", "New content")
-        .await?;
+    let result = server.write_file("/demo/new.txt", "New content").await?;
     println!("✓ 写入文件: {}", result);
 
     // 测试删除

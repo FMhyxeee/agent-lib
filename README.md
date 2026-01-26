@@ -11,21 +11,66 @@ Core, non-UI agent library in Rust. Provides:
 - **SessionBuilder Pattern** - Fluent API for configuration
 - **Advanced Features** - Token counting, history compression, task cancellation
 
-## Quick start
+## Quick Start
+
+### Basic Agent Example
 
 ```rust
-use agent_lib::model::provider::OpenAiProvider;
+use agent_lib::model::provider::GlmProvider;
 use agent_lib::{AgentBuilder, AgentResult};
 
 #[tokio::main]
 async fn main() -> AgentResult<()> {
+    // 使用 GLM 模型
     let agent = AgentBuilder::new()
-        .with_model(OpenAiProvider::new("gpt-4o-mini").with_api_key("YOUR_KEY"))
-        .with_instructions("You are a helpful assistant.")
+        .with_model(GlmProvider::new("GLM-4-Flash", "YOUR_API_KEY"))
+        .with_instructions("你是一个友好的助手。")
         .build()?;
 
-    let response = agent.run("Hello").await?;
+    let response = agent.run("什么是 Rust？").await?;
     println!("{response}");
+    Ok(())
+}
+```
+
+### Session with Event Streaming
+
+For more control, use `Session` directly with Op/Event protocol:
+
+```rust
+use agent_lib::model::provider::GlmProvider;
+use agent_lib::protocol::Op;
+use agent_lib::session::{Session, SessionConfig};
+use agent_lib::model::Message;
+
+#[tokio::main]
+async fn main() -> agent_lib::AgentResult<()> {
+    // 创建带模型支持的 Session
+    let config = SessionConfig {
+        model: Some(std::sync::Arc::new(GlmProvider::new(
+            "GLM-4-Flash",
+            std::env::var("GLM_API_KEY")?
+        ))),
+        ..Default::default()
+    };
+
+    let (_session, handle) = Session::with_config(64, config);
+
+    // 添加用户消息
+    handle.submit(Op::AddToHistory {
+        message: Message::user("你好"),
+        turn_id: "turn-1".to_string(),
+    }).await?;
+
+    // 监听事件流
+    while let Some(event) = handle.next_event().await {
+        match event {
+            agent_lib::protocol::Event::ModelStreaming { chunk } => print!("{chunk}"),
+            agent_lib::protocol::Event::TurnComplete => break,
+            _ => {}
+        }
+    }
+
     Ok(())
 }
 ```
@@ -146,7 +191,9 @@ cargo check --features codex-compat  # Tiktoken for precise counting
 - Manual history addition
 - Real-time event streaming
 
-## GLM (Zhipu) provider
+## Model Providers
+
+### GLM (智谱AI)
 
 ```rust
 use agent_lib::model::provider::GlmProvider;
@@ -155,12 +202,26 @@ use agent_lib::{AgentBuilder, AgentResult};
 #[tokio::main]
 async fn main() -> AgentResult<()> {
     let agent = AgentBuilder::new()
-        .with_model(GlmProvider::new("GLM-4.7", "YOUR_API_KEY"))
+        .with_model(GlmProvider::new("GLM-4-Flash", "YOUR_API_KEY"))
+        .with_instructions("你是一个友好的助手。")
         .build()?;
-    let response = agent.run("你好").await?;
+
+    let response = agent.run("你好，介绍一下 Rust").await?;
     println!("{response}");
     Ok(())
 }
+```
+
+**Available Models:** `GLM-4-Flash`, `GLM-4`, `GLM-4-Plus`, `GLM-4-Air`
+
+### OpenAI
+
+```rust
+use agent_lib::model::provider::OpenAiProvider;
+
+let agent = AgentBuilder::new()
+    .with_model(OpenAiProvider::new("gpt-4o-mini").with_api_key("YOUR_KEY"))
+    .build()?;
 ```
 
 ## Environment Variables
@@ -190,11 +251,22 @@ Run examples to test features:
 # Basic agent
 cargo run --example simple_chat
 
-# Tool usage
+# Tool usage (create/write/delete files)
 cargo run --example tool_call
+
+# GLM provider example
+set GLM_API_KEY=your_key
+cargo run --example simple_chat
 
 # MCP integration
 cargo run --example agent_with_mcp
+
+# Mock MCP filesystem server
+cargo run --example mock_filesystem_mcp
+
+# RegularTask E2E test with GLM
+set GLM_API_KEY=your_key
+cargo run --example regular_task_glm_test
 
 # Multi-agent coordination
 cargo run --example multi_agent
@@ -202,6 +274,36 @@ cargo run --example multi_agent
 # Configuration loading
 cargo run --example config_loader_demo
 ```
+
+### Example: Mock Filesystem MCP
+
+Test MCP integration without a real server:
+
+```bash
+cargo run --example mock_filesystem_mcp
+```
+
+This creates an in-memory filesystem with:
+- `read_file(path)` - Read file contents
+- `write_file(path, content)` - Write to files
+- `list_directory(path)` - List directory entries
+- `delete_file(path)` - Delete files
+
+### Example: RegularTask with GLM
+
+End-to-end test of the RegularTask implementation:
+
+```bash
+set GLM_API_KEY=your_key
+cargo run --example regular_task_glm_test
+```
+
+This demonstrates:
+- Session with model integration
+- Event streaming (ModelStreaming, ModelComplete)
+- Conversation history management
+- Token-aware compaction
+- Turn context configuration
 
 ## Testing
 
