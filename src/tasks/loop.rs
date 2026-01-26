@@ -147,6 +147,14 @@ pub async fn submission_loop(sess: Arc<Session>, mut rx_sub: mpsc::Receiver<Subm
                 handle_list_models(&sess).await;
             }
 
+            Op::StartTurn { prompt, .. } => {
+                handle_start_turn(&sess, prompt).await;
+            }
+
+            Op::UserInput { content } => {
+                handle_user_input(&sess, content).await;
+            }
+
             _ => {
                 debug!("Unhandled op: {:?}", sub.op);
             }
@@ -894,4 +902,29 @@ async fn handle_list_models(sess: &Session) {
 
     sess.emit_event(crate::protocol::Event::ModelsListed { models })
         .await;
+}
+
+/// 处理 StartTurn - 开始新的 Turn
+async fn handle_start_turn(sess: &Session, prompt: String) {
+    debug!(prompt = %prompt, "Handling start turn");
+
+    let turn_id = uuid::Uuid::new_v4().to_string();
+    sess.emit_event(crate::protocol::Event::TurnStarted { turn_id })
+        .await;
+
+    sess.emit_event(crate::protocol::Event::ModelComplete {
+        content: prompt,
+        usage: Default::default(),
+    })
+    .await;
+}
+
+/// 处理 UserInput - 简单用户输入
+async fn handle_user_input(sess: &Session, content: String) {
+    debug!(content = %content, "Handling user input");
+
+    sess.emit_event(crate::protocol::Event::ModelStreaming {
+        chunk: content,
+    })
+    .await;
 }
