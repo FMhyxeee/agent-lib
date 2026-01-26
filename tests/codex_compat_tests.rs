@@ -189,6 +189,7 @@ async fn test_session_config() {
         default_approval_policy: Some(ApprovalPolicy::NeverAsk),
         mcp_manager: None,
         max_undo_steps: 10,
+        model: None,
     };
 
     assert_eq!(config.queue_buffer, 128);

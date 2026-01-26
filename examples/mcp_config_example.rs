@@ -3,8 +3,8 @@
 //! This example shows how to use MCP configuration files with agent-lib.
 //! It demonstrates different ways to load and use MCP server configurations.
 
-use agent_lib::mcp::McpManager;
 use agent_lib::AgentResult;
+use agent_lib::mcp::McpManager;
 use std::env;
 
 async fn load_and_use_mcp_config() -> AgentResult<()> {

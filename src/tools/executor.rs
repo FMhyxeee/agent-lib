@@ -53,7 +53,9 @@ impl ToolExecutor {
         if self.denylist.contains(name) {
             return Err(AgentError::Tool(format!("tool denied by policy: {name}")));
         }
-        if let Some(allowlist) = &self.allowlist && !allowlist.contains(name) {
+        if let Some(allowlist) = &self.allowlist
+            && !allowlist.contains(name)
+        {
             return Err(AgentError::Tool(format!(
                 "tool not allowed by policy: {name}"
             )));

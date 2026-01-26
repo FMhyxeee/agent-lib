@@ -7,9 +7,11 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::{AgentError, AgentResult};
 use crate::mcp::McpManager;
+use crate::model::{Message, ModelClient, ModelResponse};
 use crate::protocol::{ApprovalPolicy, Event, EventQueue, Op, SubmissionQueue};
 use crate::session::{ConversationHistory, SessionState};
 use crate::tasks::{RunningTask, SessionTask};
+use crate::tools::ToolDef;
 use chrono;
 
 /// TaskSession - 任务需要访问的 Session 接口
@@ -43,6 +45,19 @@ pub trait TaskSession: Send + Sync + 'static {
 
     /// 撤销最后几条消息
     async fn undo_last_messages(&self, num_messages: usize);
+
+    /// 调用模型（可选实现）
+    ///
+    /// 默认返回 NotImplemented 错误，如果 Session 配置了 model 则会实际调用。
+    async fn chat_model(
+        &self,
+        _messages: Vec<Message>,
+        _tools: Vec<ToolDef>,
+    ) -> AgentResult<ModelResponse> {
+        Err(AgentError::NotImplemented(
+            "model not configured in session".to_string(),
+        ))
+    }
 }
 
 /// SessionArc - 实现 TaskSession 的 Arc 包装器
@@ -50,6 +65,7 @@ pub trait TaskSession: Send + Sync + 'static {
 struct SessionArc {
     history: Arc<Mutex<ConversationHistory>>,
     event_sender: mpsc::Sender<Event>,
+    model: Option<Arc<dyn ModelClient>>,
 }
 
 #[async_trait::async_trait]
@@ -93,10 +109,25 @@ impl TaskSession for SessionArc {
             }
         }
     }
+
+    /// 调用模型
+    async fn chat_model(
+        &self,
+        messages: Vec<Message>,
+        tools: Vec<ToolDef>,
+    ) -> AgentResult<ModelResponse> {
+        if let Some(model) = &self.model {
+            model.chat(messages, tools).await
+        } else {
+            Err(AgentError::NotImplemented(
+                "model not configured in session".to_string(),
+            ))
+        }
+    }
 }
 
 /// Session 配置
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SessionConfig {
     pub queue_buffer: usize,
     pub event_buffer: usize,
@@ -105,6 +136,23 @@ pub struct SessionConfig {
     pub default_approval_policy: Option<ApprovalPolicy>,
     pub mcp_manager: Option<Arc<McpManager>>,
     pub max_undo_steps: usize,
+    /// 可选的模型客户端，用于 RegularTask 等需要调用模型的任务
+    pub model: Option<Arc<dyn ModelClient>>,
+}
+
+impl std::fmt::Debug for SessionConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionConfig")
+            .field("queue_buffer", &self.queue_buffer)
+            .field("event_buffer", &self.event_buffer)
+            .field("default_model", &self.default_model)
+            .field("default_cwd", &self.default_cwd)
+            .field("default_approval_policy", &self.default_approval_policy)
+            .field("mcp_manager", &self.mcp_manager)
+            .field("max_undo_steps", &self.max_undo_steps)
+            .field("model", &self.model.as_ref().map(|_| "<ModelClient>"))
+            .finish()
+    }
 }
 
 impl Default for SessionConfig {
@@ -117,6 +165,7 @@ impl Default for SessionConfig {
             default_approval_policy: None,
             mcp_manager: None,
             max_undo_steps: 10,
+            model: None,
         }
     }
 }
@@ -127,7 +176,6 @@ struct ActiveTurn {
     tasks: Vec<RunningTask>,
 }
 
-#[derive(Debug)]
 pub struct Session {
     history: Arc<Mutex<ConversationHistory>>,
     state: Arc<Mutex<SessionState>>,
@@ -136,6 +184,21 @@ pub struct Session {
     config: SessionConfig,
     active_turn: Arc<Mutex<Option<ActiveTurn>>>,
     undo_stack: Arc<Mutex<VecDeque<UndoSnapshot>>>,
+    model: Option<Arc<dyn ModelClient>>,
+}
+
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Session")
+            .field("history", &"<ConversationHistory>")
+            .field("state", &self.state)
+            .field("submission", &self.submission)
+            .field("config", &self.config)
+            .field("active_turn", &self.active_turn)
+            .field("undo_stack", &"<UndoStack>")
+            .field("model", &self.model.as_ref().map(|_| "<ModelClient>"))
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -164,6 +227,8 @@ impl Session {
         let (event_sender, event_queue) = EventQueue::new(config.event_buffer);
         let event_stream = event_queue.stream();
 
+        let model = config.model.clone();
+
         let session = Self {
             history: Arc::new(Mutex::new(ConversationHistory::new())),
             state: Arc::new(Mutex::new(SessionState::Idle)),
@@ -172,6 +237,7 @@ impl Session {
             config,
             active_turn: Arc::new(Mutex::new(None)),
             undo_stack: Arc::new(Mutex::new(VecDeque::new())),
+            model,
         };
 
         let handle = SessionHandle {
@@ -269,6 +335,7 @@ impl Session {
         let session_arc: Arc<dyn TaskSession> = Arc::new(SessionArc {
             history: Arc::clone(&self.history),
             event_sender: self.event_sender.clone(),
+            model: self.model.clone(),
         });
 
         tokio::spawn({
