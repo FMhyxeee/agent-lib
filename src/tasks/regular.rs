@@ -92,22 +92,33 @@ impl SessionTask for RegularTask {
         };
 
         // 6. 发送流式响应内容（分块发送）
-        let content = &response.content;
+        // 使用字符迭代器安全地处理 UTF-8
         let chunk_size = 20;
-        for i in (0..content.len()).step_by(chunk_size) {
-            if cancellation_token.is_cancelled() {
+        let mut current_chunk = String::new();
+        for ch in response.content.chars() {
+            current_chunk.push(ch);
+            if current_chunk.chars().count() >= chunk_size {
+                if cancellation_token.is_cancelled() {
+                    session
+                        .emit_event(Event::TurnAborted {
+                            reason: TurnAbortReason::Error("cancelled during response".to_string()),
+                        })
+                        .await;
+                    return None;
+                }
                 session
-                    .emit_event(Event::TurnAborted {
-                        reason: TurnAbortReason::Error("cancelled during response".to_string()),
+                    .emit_event(Event::ModelStreaming {
+                        chunk: current_chunk.clone(),
                     })
                     .await;
-                return None;
+                current_chunk.clear();
             }
-            let end = (i + chunk_size).min(content.len());
-            let chunk = &content[i..end];
+        }
+        // 发送剩余内容
+        if !current_chunk.is_empty() {
             session
                 .emit_event(Event::ModelStreaming {
-                    chunk: chunk.to_string(),
+                    chunk: current_chunk,
                 })
                 .await;
         }
