@@ -52,7 +52,12 @@ cargo run --example mcp_demo           # MCP demo with basic operations
 cargo run --example mcp_demo_final     # Advanced MCP demo
 cargo run --example agent_with_mcp     # Agent with MCP integration
 cargo run --example agent_with_mcp_manager  # Agent with MCP manager
-cargo run --example simple_mcp_test   # Simple MCP testing
+cargo run --example simple_mcp_test    # Simple MCP testing
+cargo run --example mock_filesystem_mcp  # Mock MCP filesystem server
+
+# E2E Testing examples (require API keys)
+set GLM_API_KEY=your_key
+cargo run --example regular_task_glm_test  # RegularTask E2E test with GLM
 
 # Configuration examples
 cargo run --example config_loader_demo  # Configuration loading demo
@@ -87,6 +92,7 @@ This library uses an **event-driven architecture** based on SQ/EQ (Submission/Ev
    - `ModelClient` trait for LLM provider abstraction
    - Built-in providers: `OpenAiProvider`, `GlmProvider`
    - Streaming support via `chat_stream()`
+   - GLM models: `GLM-4-Flash`, `GLM-4`, `GLM-4-Plus`, `GLM-4-Air`
 
 3. **Tool System** (`src/tools/`)
    - `Tool` trait for pluggable capabilities
@@ -108,8 +114,9 @@ This library uses an **event-driven architecture** based on SQ/EQ (Submission/Ev
 6. **Task System** (`src/tasks/`)
    - `SessionTask` trait for defining async tasks
    - `submission_loop` - Codex-compatible core event loop
-   - Built-in tasks: `RegularTask`, `CompactTask`
+   - Built-in tasks: `RegularTask` (✅ implemented), `CompactTask`
    - Task cancellation and lifecycle management
+   - `TaskSession` trait with `chat_model()` for model integration
 
 7. **Token Management** (`src/token/`)
    - `TokenCounter` - Approximate or precise (tiktoken) token counting
@@ -144,6 +151,17 @@ This library uses an **event-driven architecture** based on SQ/EQ (Submission/Ev
 - **ApprovalPolicy** - AlwaysAsk, ReadOnlySafe, NeverAsk
 - **SandboxPolicy** - Readonly, Persistent, InMemory
 - **Structured error handling** with `AgentResult<T>`
+
+### Session with Model Support
+SessionConfig now supports optional model client for RegularTask:
+```rust
+let config = SessionConfig {
+    model: Some(Arc::new(GlmProvider::new("GLM-4-Flash", api_key))),
+    mcp_manager: Some(mcp_manager),
+    ..Default::default()
+};
+let (session, handle) = Session::with_config(64, config);
+```
 
 ### Configuration
 - Features: `openai`, `anthropic`, `local-llm`, `builtin-tools`, `mcp`, `codex-compat`
@@ -215,8 +233,20 @@ let budget = policy.token_budget();
 ```
 
 ### Task System
+
+#### RegularTask Implementation
+`RegularTask` is fully implemented with:
+- Cancellation token support
+- Automatic history compaction (70% keep ratio when token limit exceeded)
+- Streaming model output with chunked events
+- Complete error handling
+
 ```rust
-use agent_lib::tasks::{SessionTask, CompactTask, submission_loop};
+use agent_lib::tasks::{SessionTask, RegularTask, CompactTask, submission_loop};
+
+// Use built-in RegularTask
+let task = Arc::new(RegularTask);
+session.spawn_task(ctx, task).await;
 
 // Define custom task
 struct MyTask;
@@ -224,8 +254,25 @@ struct MyTask;
 impl SessionTask for MyTask {
     fn kind(&self) -> TaskKind { TaskKind::Regular }
 
-    async fn run(self: Arc<Self>, session: Arc<dyn TaskSession>, ...) -> Option<String> {
-        // Task implementation
+    async fn run(self: Arc<Self>, session: Arc<dyn TaskSession>, ctx: Arc<TurnContext>, token: CancellationToken) -> Option<String> {
+        // 1. Check cancellation
+        if token.is_cancelled() { return None; }
+
+        // 2. Get history
+        let history = session.history().await;
+
+        // 3. Check if compaction needed
+        if session.should_compact(ctx.context_window).await {
+            session.compact_history(keep, summary).await;
+        }
+
+        // 4. Call model via session.chat_model()
+        let response = session.chat_model(messages, tools).await?;
+
+        // 5. Send streaming events
+        session.emit_event(Event::ModelStreaming { chunk: ... }).await;
+
+        Some("Task completed".to_string())
     }
 }
 
@@ -244,6 +291,21 @@ history.compact(keep_recent: 10, summary: "Previous conversation...".to_string()
 
 // Get messages for model prompt (includes summaries)
 let messages = history.for_prompt();
+```
+
+### UTF-8 Streaming
+RegularTask uses character-based iteration for safe UTF-8 streaming:
+```rust
+// Safe for multi-byte UTF-8 characters (e.g., Chinese)
+let chunk_size = 20;
+let mut current_chunk = String::new();
+for ch in response.content.chars() {
+    current_chunk.push(ch);
+    if current_chunk.chars().count() >= chunk_size {
+        session.emit_event(Event::ModelStreaming { chunk: current_chunk.clone() }).await;
+        current_chunk.clear();
+    }
+}
 ```
 
 ## Important Patterns
@@ -333,3 +395,15 @@ MCP can be configured via:
 - Transport health monitoring and automatic failover
 - Dynamic server registration/deregistration
 - Load balancing across multiple instances
+
+### Mock MCP for Testing
+Use `mock_filesystem_mcp` example to test MCP integration without real servers:
+```bash
+cargo run --example mock_filesystem_mcp
+```
+
+This provides:
+- In-memory filesystem with `read_file`, `write_file`, `list_directory`, `delete_file`
+- Session MCP integration testing
+- Op/Event flow verification
+- No external dependencies required
