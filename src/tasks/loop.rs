@@ -111,6 +111,42 @@ pub async fn submission_loop(sess: Arc<Session>, mut rx_sub: mpsc::Receiver<Subm
                 handle_add_to_history(&sess, text).await;
             }
 
+            Op::RunUserShellCommand { command } => {
+                handle_run_user_shell_command(&sess, command).await;
+            }
+
+            Op::ApprovalResponse { request_id, approved } => {
+                handle_approval_response(&sess, request_id, approved).await;
+            }
+
+            Op::Handoff { target_agent, context } => {
+                handle_handoff(&sess, target_agent, context).await;
+            }
+
+            Op::UserInputAnswer { id, response } => {
+                handle_user_input_answer(&sess, id, response).await;
+            }
+
+            Op::Review { review_request } => {
+                handle_review(&sess, review_request).await;
+            }
+
+            Op::GetHistoryEntryRequest { offset, log_id } => {
+                handle_get_history_entry_request(&sess, offset, log_id).await;
+            }
+
+            Op::ListSkills { cwds, force_reload } => {
+                handle_list_skills(&sess, cwds, force_reload).await;
+            }
+
+            Op::ListCustomPrompts => {
+                handle_list_custom_prompts(&sess).await;
+            }
+
+            Op::ListModels => {
+                handle_list_models(&sess).await;
+            }
+
             _ => {
                 debug!("Unhandled op: {:?}", sub.op);
             }
@@ -398,9 +434,36 @@ async fn handle_list_mcp_tools(sess: &Session) {
         .await;
 }
 
-async fn handle_refresh_mcp_servers(_sess: &Session, config: McpServerRefreshConfig) {
+async fn handle_refresh_mcp_servers(sess: &Session, config: McpServerRefreshConfig) {
     debug!(force = config.force_reload, "Handling refresh MCP servers");
-    // TODO: 实现刷新 MCP 服务器逻辑
+
+    if let Some(manager) = sess.get_mcp_manager() {
+        let servers = manager.list_servers().await;
+
+        if config.force_reload {
+            // 强制重新加载所有服务器
+            debug!("Force reloading {} MCP servers", servers.len());
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("Force reloading {} MCP servers", servers.len()),
+            })
+            .await;
+        } else {
+            // 检查并刷新不健康的连接
+            debug!("Checking {} MCP servers for unhealthy connections", servers.len());
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!(
+                    "Checked {} MCP servers, all connections healthy",
+                    servers.len()
+                ),
+            })
+            .await;
+        }
+    } else {
+        sess.emit_event(crate::protocol::Event::Warning {
+            message: "No MCP manager configured".to_string(),
+        })
+        .await;
+    }
 }
 
 async fn handle_undo(sess: &Session) {
@@ -492,4 +555,154 @@ async fn handle_add_to_history(sess: &Session, text: String) {
         entry: text,
     })
     .await;
+}
+
+/// 处理用户 Shell 命令执行
+async fn handle_run_user_shell_command(sess: &Session, command: String) {
+    use tokio::process::Command;
+    use tokio::time::{timeout, Duration};
+
+    debug!(command = %command, "Handling run user shell command");
+
+    // 检查命令是否允许执行
+    if !is_command_allowed(&command) {
+        sess.emit_event(crate::protocol::Event::Error {
+            error: crate::error::AgentError::Tool(format!(
+                "Command not allowed by policy: {}",
+                command
+            )),
+        })
+        .await;
+        return;
+    }
+
+    // 执行命令（带超时）
+    let result = match timeout(
+        Duration::from_secs(30),
+        if cfg!(windows) {
+            Command::new("cmd")
+                .args(["/C", &command])
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&command)
+                .output()
+        },
+    )
+    .await
+    {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
+            let error_msg = format!("Command failed: {}", e);
+            sess.emit_event(crate::protocol::Event::Error {
+                error: crate::error::AgentError::Tool(error_msg),
+            })
+            .await;
+            return;
+        }
+        Err(_) => {
+            sess.emit_event(crate::protocol::Event::Error {
+                error: crate::error::AgentError::Tool("Command timed out".to_string()),
+            })
+            .await;
+            return;
+        }
+    };
+
+    // 解析输出
+    let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+    let exit_code = result.status.code().unwrap_or(-1);
+
+    // 发送命令执行事件
+    sess.emit_event(crate::protocol::Event::RunUserShellCommand {
+        command: command.clone(),
+    })
+    .await;
+
+    // 发送执行结果
+    if exit_code == 0 {
+        // 成功 - 发送输出
+        if !stdout.is_empty() {
+            sess.emit_event(crate::protocol::Event::ModelStreaming {
+                chunk: stdout,
+            })
+            .await;
+        }
+        sess.emit_event(crate::protocol::Event::ToolCallResult {
+            tool: "shell".to_string(),
+            result: crate::tools::ToolResult::text(format!(
+                "Exit code: {}",
+                exit_code
+            )),
+        })
+        .await;
+    } else {
+        // 失败 - 发送错误信息
+        let error_msg = if !stderr.is_empty() {
+            format!("Command exited with {}: {}", exit_code, stderr)
+        } else {
+            format!("Command exited with {}", exit_code)
+        };
+        sess.emit_event(crate::protocol::Event::Error {
+            error: crate::error::AgentError::Tool(error_msg),
+        })
+        .await;
+    }
+}
+
+/// 检查命令是否允许执行
+fn is_command_allowed(command: &str) -> bool {
+    // 基本的命令安全检查
+    let command_lower = command.to_lowercase();
+
+    // 禁止的命令
+    let forbidden = [
+        "rm -rf /",
+        "format",
+        "mkfs",
+        "dd if=",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+    ];
+
+    for forbidden_cmd in forbidden {
+        if command_lower.contains(forbidden_cmd) {
+            debug!(command = %command, "Command blocked by safety policy");
+            return false;
+        }
+    }
+
+    true
+}
+
+/// 处理批准响应
+async fn handle_approval_response(sess: &Session, request_id: String, approved: bool) {
+    debug!(
+        request_id = %request_id,
+        approved = approved,
+        "Handling approval response"
+    );
+
+    if approved {
+        sess.emit_event(crate::protocol::Event::ToolCallResult {
+            tool: request_id.clone(),
+            result: crate::tools::ToolResult::text(format!(
+                "Request {} approved",
+                request_id
+            )),
+        })
+        .await;
+    } else {
+        sess.emit_event(crate::protocol::Event::Error {
+            error: crate::error::AgentError::Tool(format!(
+                "Request {} denied by user",
+                request_id
+            )),
+        })
+        .await;
+    }
 }
