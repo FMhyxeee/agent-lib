@@ -15,10 +15,11 @@ async fn glm_chat_smoke_test() -> AgentResult<()> {
     };
 
     let agent = AgentBuilder::new()
-        .with_model(GlmProvider::new("GLM-4.7", api_key).with_base_url(base_url))
+        .with_model(GlmProvider::new("GLM-4.7-flashX", api_key).with_base_url(base_url))
         .build()?;
 
     let response = agent.run("你好").await?;
+    println!("response: {}", response);
     assert!(!response.trim().is_empty());
     Ok(())
 }
