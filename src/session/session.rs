@@ -686,6 +686,15 @@ async fn session_loop_enhanced(
                     })
                     .await;
             }
+            Op::StartTurn { prompt, .. } => {
+                // 简单的 StartTurn - 直接返回提示内容
+                let _ = sess
+                    .emit_event(Event::ModelComplete {
+                        content: prompt,
+                        usage: Default::default(),
+                    })
+                    .await;
+            }
             _ => {
                 // 其他 Op 发送警告
                 let _ = sess.emit_event(Event::Warning {
