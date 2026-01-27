@@ -34,7 +34,7 @@ impl ConversationHistory {
         Self {
             messages: Vec::new(),
             compacted_summaries: Vec::new(),
-            token_counter: TokenCounter::default(),
+            token_counter: TokenCounter::new(),
             cached_token_count: Cell::new(0),
             cache_dirty: Cell::new(false),
         }

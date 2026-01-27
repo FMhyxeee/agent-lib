@@ -947,7 +947,7 @@ fn perform_code_review(content: &str, context: Option<&str>) -> String {
     }
 
     // 构建审查报告
-    let mut report = format!("## Code Review Report\n\n");
+    let mut report = "## Code Review Report\n\n".to_string();
     report.push_str(&format!("**Content Length:** {} chars\n", content.len()));
     report.push_str(&format!("**Lines:** {}\n\n", line_count));
 
@@ -960,7 +960,7 @@ fn perform_code_review(content: &str, context: Option<&str>) -> String {
         for (i, issue) in issues.iter().enumerate() {
             report.push_str(&format!("{}. {}\n", i + 1, issue));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     if !suggestions.is_empty() {

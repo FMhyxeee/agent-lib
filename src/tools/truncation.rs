@@ -1,7 +1,6 @@
 /// 工具输出截断功能
 ///
 /// 防止工具返回过大的输出导致 context 击穿。
-
 use serde_json::Value;
 
 /// 截断标记
@@ -26,7 +25,7 @@ const TAIL_SIZE: usize = 24_500;
 ///
 /// # 示例
 /// ```rust
-/// use agent_lib::tools::truncation::truncate_output;
+/// use agent_lib::tools::truncate_output;
 ///
 /// let short = "Hello, world!";
 /// assert_eq!(truncate_output(short, 100), "Hello, world!");

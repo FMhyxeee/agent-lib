@@ -188,6 +188,7 @@ async fn test_session_config() {
         mcp_manager: None,
         max_undo_steps: 10,
         model: None,
+        tool_executor: None,
     };
 
     assert_eq!(config.queue_buffer, 128);

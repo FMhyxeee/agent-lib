@@ -93,7 +93,7 @@ impl ModelClient for OpenAiProvider {
                                     tool_calls: Some(openai_tool_calls),
                                     name: None,
                                     function_call: None,
-                                },
+                                                                    },
                             )
                         } else {
                             // 普通助手消息
@@ -106,7 +106,7 @@ impl ModelClient for OpenAiProvider {
                                     tool_calls: None,
                                     name: None,
                                     function_call: None,
-                                },
+                                                                    },
                             )
                         }
                     }
@@ -251,7 +251,7 @@ impl ModelClient for OpenAiProvider {
                                     tool_calls: Some(openai_tool_calls),
                                     name: None,
                                     function_call: None,
-                                },
+                                                                    },
                             )
                         } else {
                             ChatCompletionRequestMessage::Assistant(
@@ -263,7 +263,7 @@ impl ModelClient for OpenAiProvider {
                                     tool_calls: None,
                                     name: None,
                                     function_call: None,
-                                },
+                                                                    },
                             )
                         }
                     }

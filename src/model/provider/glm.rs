@@ -165,15 +165,15 @@ impl ModelClient for GlmProvider {
             .map(|calls| {
                 calls
                     .iter()
-                    .filter_map(|tc| {
+                    .map(|tc| {
                         // GLM 的 arguments 是字符串形式的 JSON，需要解析
                         let args: Value = serde_json::from_str(&tc.function.arguments)
                             .unwrap_or_else(|_| Value::Object(Default::default()));
-                        Some(ToolCall {
+                        ToolCall {
                             id: tc.id.clone(),
                             name: tc.function.name.clone(),
                             arguments: args,
-                        })
+                        }
                     })
                     .collect()
             })
