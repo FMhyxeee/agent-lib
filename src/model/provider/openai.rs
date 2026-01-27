@@ -5,7 +5,7 @@ use futures::StreamExt;
 use serde_json::Value;
 
 use crate::error::{AgentError, AgentResult};
-use crate::model::{Message, ModelClient, ModelResponse, StreamChunk, ToolCall, TokenUsage};
+use crate::model::{Message, ModelClient, ModelResponse, StreamChunk, TokenUsage};
 use crate::tools::ToolDef;
 
 #[derive(Debug, Clone)]
@@ -39,10 +39,13 @@ impl ModelClient for OpenAiProvider {
         {
             use async_openai::config::OpenAIConfig;
             use async_openai::types::{
-                ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-                ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
-                ChatCompletionRequestUserMessageContent, ChatCompletionTool,
-                ChatCompletionToolType, CreateChatCompletionRequest, FunctionObject,
+                ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
+                ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
+                ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
+                ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
+                ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+                ChatCompletionTool, ChatCompletionToolType, CreateChatCompletionRequest,
+                FunctionObject,
             };
             let config = if let Some(key) = &self.api_key {
                 OpenAIConfig::new().with_api_key(key)
@@ -60,10 +63,60 @@ impl ModelClient for OpenAiProvider {
                             name: None,
                         })
                     }
-                    _ => ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
-                        content: ChatCompletionRequestUserMessageContent::Text(msg.content),
-                        name: None,
-                    }),
+                    crate::model::MessageRole::User => {
+                        ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
+                            content: ChatCompletionRequestUserMessageContent::Text(msg.content),
+                            name: None,
+                        })
+                    }
+                    crate::model::MessageRole::Assistant => {
+                        // 助手消息可能包含工具调用
+                        if let Some(tool_calls) = msg.tool_calls {
+                            let openai_tool_calls: Vec<ChatCompletionMessageToolCall> = tool_calls
+                                .into_iter()
+                                .map(|tc| ChatCompletionMessageToolCall {
+                                    id: tc.id,
+                                    r#type: ChatCompletionToolType::Function,
+                                    function: async_openai::types::FunctionCall {
+                                        name: tc.name,
+                                        arguments: serde_json::to_string(&tc.arguments)
+                                            .unwrap_or_else(|_| "{}".to_string()),
+                                    },
+                                })
+                                .collect();
+                            ChatCompletionRequestMessage::Assistant(
+                                ChatCompletionRequestAssistantMessage {
+                                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                                        msg.content,
+                                    )),
+                                    refusal: None,
+                                    tool_calls: Some(openai_tool_calls),
+                                    name: None,
+                                    function_call: None,
+                                },
+                            )
+                        } else {
+                            // 普通助手消息
+                            ChatCompletionRequestMessage::Assistant(
+                                ChatCompletionRequestAssistantMessage {
+                                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                                        msg.content,
+                                    )),
+                                    refusal: None,
+                                    tool_calls: None,
+                                    name: None,
+                                    function_call: None,
+                                },
+                            )
+                        }
+                    }
+                    crate::model::MessageRole::Tool => {
+                        // 工具结果消息
+                        ChatCompletionRequestMessage::Tool(ChatCompletionRequestToolMessage {
+                            content: ChatCompletionRequestToolMessageContent::Text(msg.content),
+                            tool_call_id: msg.tool_call_id.unwrap_or_default(),
+                        })
+                    }
                 })
                 .collect();
 
@@ -108,16 +161,11 @@ impl ModelClient for OpenAiProvider {
                 .map(|calls| {
                     calls
                         .iter()
-                        .filter_map(|tc| {
-                            let f = &tc.function;
-                            // OpenAI 的 arguments 是 JSON 字符串，需要解析
-                            let args: Value = serde_json::from_str(&f.arguments)
-                                .unwrap_or_else(|_| Value::Object(serde_json::Map::default()));
-                            Some(ToolCall {
-                                id: tc.id.clone(),
-                                name: f.name.clone(),
-                                arguments: args,
-                            })
+                        .map(|tc| crate::model::ToolCall {
+                            id: tc.id.clone(),
+                            name: tc.function.name.clone(),
+                            arguments: serde_json::from_str(&tc.function.arguments)
+                                .unwrap_or_else(|_| Value::Object(serde_json::Map::default())),
                         })
                         .collect()
                 })
@@ -150,10 +198,13 @@ impl ModelClient for OpenAiProvider {
         {
             use async_openai::config::OpenAIConfig;
             use async_openai::types::{
-                ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-                ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
-                ChatCompletionRequestUserMessageContent, ChatCompletionTool,
-                ChatCompletionToolType, CreateChatCompletionRequest, FunctionObject,
+                ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
+                ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
+                ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
+                ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
+                ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+                ChatCompletionTool, ChatCompletionToolType, CreateChatCompletionRequest,
+                FunctionObject,
             };
             let config = if let Some(key) = &self.api_key {
                 OpenAIConfig::new().with_api_key(key)
@@ -171,10 +222,57 @@ impl ModelClient for OpenAiProvider {
                             name: None,
                         })
                     }
-                    _ => ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
-                        content: ChatCompletionRequestUserMessageContent::Text(msg.content),
-                        name: None,
-                    }),
+                    crate::model::MessageRole::User => {
+                        ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
+                            content: ChatCompletionRequestUserMessageContent::Text(msg.content),
+                            name: None,
+                        })
+                    }
+                    crate::model::MessageRole::Assistant => {
+                        if let Some(tool_calls) = msg.tool_calls {
+                            let openai_tool_calls: Vec<ChatCompletionMessageToolCall> = tool_calls
+                                .into_iter()
+                                .map(|tc| ChatCompletionMessageToolCall {
+                                    id: tc.id,
+                                    r#type: ChatCompletionToolType::Function,
+                                    function: async_openai::types::FunctionCall {
+                                        name: tc.name,
+                                        arguments: serde_json::to_string(&tc.arguments)
+                                            .unwrap_or_else(|_| "{}".to_string()),
+                                    },
+                                })
+                                .collect();
+                            ChatCompletionRequestMessage::Assistant(
+                                ChatCompletionRequestAssistantMessage {
+                                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                                        msg.content,
+                                    )),
+                                    refusal: None,
+                                    tool_calls: Some(openai_tool_calls),
+                                    name: None,
+                                    function_call: None,
+                                },
+                            )
+                        } else {
+                            ChatCompletionRequestMessage::Assistant(
+                                ChatCompletionRequestAssistantMessage {
+                                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                                        msg.content,
+                                    )),
+                                    refusal: None,
+                                    tool_calls: None,
+                                    name: None,
+                                    function_call: None,
+                                },
+                            )
+                        }
+                    }
+                    crate::model::MessageRole::Tool => {
+                        ChatCompletionRequestMessage::Tool(ChatCompletionRequestToolMessage {
+                            content: ChatCompletionRequestToolMessageContent::Text(msg.content),
+                            tool_call_id: msg.tool_call_id.unwrap_or_default(),
+                        })
+                    }
                 })
                 .collect();
 

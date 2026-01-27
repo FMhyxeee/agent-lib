@@ -48,6 +48,26 @@ struct GlmChatRequest {
 struct GlmMessage {
     role: String,
     content: String,
+    /// 工具调用 ID (仅 tool 角色使用)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+    /// 工具调用列表 (仅 assistant 角色使用)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<GlmToolCallRequest>>,
+}
+
+/// 请求时使用的工具调用格式
+#[derive(Debug, Serialize)]
+struct GlmToolCallRequest {
+    id: String,
+    r#type: String,
+    function: GlmToolCallFunctionRequest,
+}
+
+#[derive(Debug, Serialize)]
+struct GlmToolCallFunctionRequest {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -236,9 +256,59 @@ fn map_message(message: Message) -> GlmMessage {
         MessageRole::Assistant => "assistant",
         MessageRole::Tool => "tool",
     };
-    GlmMessage {
-        role: role.to_string(),
-        content: message.content,
+
+    match message.role {
+        MessageRole::Tool => {
+            // 工具结果消息需要 tool_call_id
+            GlmMessage {
+                role: role.to_string(),
+                content: message.content,
+                tool_call_id: message.tool_call_id,
+                tool_calls: None,
+            }
+        }
+        MessageRole::Assistant => {
+            // 助手消息可能包含工具调用
+            if let Some(tool_calls) = message.tool_calls {
+                let request_tool_calls = tool_calls
+                    .into_iter()
+                    .map(|tc| GlmToolCallRequest {
+                        id: tc.id,
+                        r#type: "function".to_string(),
+                        function: GlmToolCallFunctionRequest {
+                            name: tc.name,
+                            // arguments 在我们的结构中是 Value，需要转为字符串
+                            arguments: serde_json::to_string(&tc.arguments)
+                                .unwrap_or_else(|_| "{}".to_string()),
+                        },
+                    })
+                    .collect();
+
+                GlmMessage {
+                    role: role.to_string(),
+                    content: message.content,
+                    tool_call_id: None,
+                    tool_calls: Some(request_tool_calls),
+                }
+            } else {
+                // 普通助手消息
+                GlmMessage {
+                    role: role.to_string(),
+                    content: message.content,
+                    tool_call_id: None,
+                    tool_calls: None,
+                }
+            }
+        }
+        _ => {
+            // System 和 User 消息
+            GlmMessage {
+                role: role.to_string(),
+                content: message.content,
+                tool_call_id: None,
+                tool_calls: None,
+            }
+        }
     }
 }
 
