@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::{AgentError, AgentResult};
-use crate::model::{Message, MessageRole, ModelClient, ModelResponse, StreamChunk, TokenUsage};
+use crate::model::{Message, MessageRole, ModelClient, ModelResponse, StreamChunk, ToolCall, TokenUsage};
 use crate::tools::ToolDef;
 
 #[derive(Debug, Clone)]
@@ -81,6 +81,20 @@ struct GlmChoice {
 #[derive(Debug, Deserialize)]
 struct GlmMessageResponse {
     content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<GlmToolCall>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlmToolCall {
+    id: String,
+    function: GlmToolCallFunction,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlmToolCallFunction {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,11 +132,31 @@ impl ModelClient for GlmProvider {
             .await
             .map_err(|err| AgentError::Model(format!("glm parse failed: {err}")))?;
 
-        let content = response
-            .choices
-            .first()
-            .and_then(|choice| choice.message.as_ref())
+        let choice = response.choices.first();
+        let message = choice.and_then(|c| c.message.as_ref());
+
+        let content = message
             .and_then(|msg| msg.content.clone())
+            .unwrap_or_default();
+
+        // 解析工具调用
+        let tool_calls = message
+            .and_then(|msg| msg.tool_calls.as_ref())
+            .map(|calls| {
+                calls
+                    .iter()
+                    .filter_map(|tc| {
+                        // GLM 的 arguments 是字符串形式的 JSON，需要解析
+                        let args: Value = serde_json::from_str(&tc.function.arguments)
+                            .unwrap_or_else(|_| Value::Object(Default::default()));
+                        Some(ToolCall {
+                            id: tc.id.clone(),
+                            name: tc.function.name.clone(),
+                            arguments: args,
+                        })
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         let usage = response.usage.map(|usage| TokenUsage {
@@ -134,6 +168,7 @@ impl ModelClient for GlmProvider {
         Ok(ModelResponse {
             content,
             usage: usage.unwrap_or_default(),
+            tool_calls,
         })
     }
 

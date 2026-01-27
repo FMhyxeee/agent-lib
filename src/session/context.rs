@@ -49,6 +49,13 @@ pub struct TurnContext {
 
     /// 上下文窗口大小
     pub context_window: usize,
+
+    /// 工具输出最大字符数
+    ///
+    /// 当工具返回的输出超过此限制时，会被截断。
+    /// 截断策略：保留开头 + 中间省略 + 保留结尾
+    /// 默认值：50,000 字符
+    pub tool_output_max_size: usize,
 }
 
 impl Default for TurnContext {
@@ -70,6 +77,7 @@ impl Default for TurnContext {
             truncation_policy: None,
             auto_compact_token_limit: None,
             context_window: 200_000, // 默认上下文窗口 (GLM 模型)
+            tool_output_max_size: 50_000, // 默认工具输出最大 50K 字符
         }
     }
 }
@@ -127,6 +135,12 @@ impl TurnContext {
     /// 设置自动压缩限制
     pub fn with_auto_compact_limit(mut self, limit: i64) -> Self {
         self.auto_compact_token_limit = Some(limit);
+        self
+    }
+
+    /// 设置工具输出最大字符数
+    pub fn with_tool_output_max_size(mut self, max_size: usize) -> Self {
+        self.tool_output_max_size = max_size;
         self
     }
 

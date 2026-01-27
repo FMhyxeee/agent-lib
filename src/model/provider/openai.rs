@@ -2,9 +2,10 @@ use async_trait::async_trait;
 use std::pin::Pin;
 
 use futures::StreamExt;
+use serde_json::Value;
 
 use crate::error::{AgentError, AgentResult};
-use crate::model::{Message, ModelClient, ModelResponse, StreamChunk, TokenUsage};
+use crate::model::{Message, ModelClient, ModelResponse, StreamChunk, ToolCall, TokenUsage};
 use crate::tools::ToolDef;
 
 #[derive(Debug, Clone)]
@@ -96,10 +97,30 @@ impl ModelClient for OpenAiProvider {
                 .await
                 .map_err(|err| AgentError::Model(err.to_string()))?;
 
-            let content = response
-                .choices
-                .first()
-                .and_then(|choice| choice.message.content.clone())
+            let choice = response.choices.first();
+            let content = choice
+                .and_then(|c| c.message.content.clone())
+                .unwrap_or_default();
+
+            // 解析工具调用
+            let tool_calls = choice
+                .and_then(|c| c.message.tool_calls.as_ref())
+                .map(|calls| {
+                    calls
+                        .iter()
+                        .filter_map(|tc| {
+                            let f = &tc.function;
+                            // OpenAI 的 arguments 是 JSON 字符串，需要解析
+                            let args: Value = serde_json::from_str(&f.arguments)
+                                .unwrap_or_else(|_| Value::Object(serde_json::Map::default()));
+                            Some(ToolCall {
+                                id: tc.id.clone(),
+                                name: f.name.clone(),
+                                arguments: args,
+                            })
+                        })
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let usage = response.usage.map(|usage| TokenUsage {
@@ -111,6 +132,7 @@ impl ModelClient for OpenAiProvider {
             Ok(ModelResponse {
                 content,
                 usage: usage.unwrap_or_default(),
+                tool_calls,
             })
         }
         #[cfg(not(feature = "openai"))]

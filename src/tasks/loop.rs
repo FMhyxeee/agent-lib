@@ -239,6 +239,7 @@ async fn handle_override_turn_context(
         truncation_policy: ctx.truncation_policy.clone(),
         auto_compact_token_limit: ctx.auto_compact_token_limit,
         context_window: ctx.context_window,
+        tool_output_max_size: ctx.tool_output_max_size,
     };
 
     // 发送上下文覆盖事件
@@ -308,6 +309,7 @@ async fn handle_user_input_or_turn(
                 truncation_policy: base_ctx.truncation_policy.clone(),
                 auto_compact_token_limit: base_ctx.auto_compact_token_limit,
                 context_window: base_ctx.context_window,
+                tool_output_max_size: base_ctx.tool_output_max_size,
             };
 
             *previous_context = Some(Arc::new(new_ctx.clone()));

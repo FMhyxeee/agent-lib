@@ -215,6 +215,8 @@ mod tests {
             history.push(Message {
                 role: MessageRole::User,
                 content: format!("Message {}", i),
+                tool_call_id: None,
+                tool_calls: None,
             });
         }
 
@@ -236,6 +238,8 @@ mod tests {
             history.push(Message {
                 role: MessageRole::User,
                 content: format!("Message {}", i),
+                tool_call_id: None,
+                tool_calls: None,
             });
         }
 

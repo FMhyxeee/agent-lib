@@ -11,7 +11,7 @@ use crate::model::{Message, ModelClient, ModelResponse};
 use crate::protocol::{ApprovalPolicy, Event, EventQueue, Op, SubmissionQueue};
 use crate::session::{ConversationHistory, SessionState};
 use crate::tasks::{RunningTask, SessionTask};
-use crate::tools::ToolDef;
+use crate::tools::{ToolDef, ToolExecutor};
 use chrono;
 
 /// TaskSession - 任务需要访问的 Session 接口
@@ -58,6 +58,22 @@ pub trait TaskSession: Send + Sync + 'static {
             "model not configured in session".to_string(),
         ))
     }
+
+    /// 获取可用工具列表
+    async fn list_tools(&self) -> Vec<ToolDef> {
+        vec![]
+    }
+
+    /// 执行工具
+    async fn execute_tool(
+        &self,
+        _name: &str,
+        _args: serde_json::Value,
+    ) -> AgentResult<crate::tools::ToolResult> {
+        Err(AgentError::NotImplemented(
+            "tool executor not configured in session".to_string(),
+        ))
+    }
 }
 
 /// SessionArc - 实现 TaskSession 的 Arc 包装器
@@ -66,6 +82,7 @@ struct SessionArc {
     history: Arc<Mutex<ConversationHistory>>,
     event_sender: mpsc::Sender<Event>,
     model: Option<Arc<dyn ModelClient>>,
+    tool_executor: Option<Arc<ToolExecutor>>,
 }
 
 #[async_trait::async_trait]
@@ -124,6 +141,35 @@ impl TaskSession for SessionArc {
             ))
         }
     }
+
+    /// 获取可用工具列表
+    async fn list_tools(&self) -> Vec<ToolDef> {
+        if let Some(executor) = &self.tool_executor {
+            executor.list()
+        } else {
+            vec![]
+        }
+    }
+
+    /// 执行工具
+    async fn execute_tool(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+    ) -> AgentResult<crate::tools::ToolResult> {
+        if let Some(executor) = &self.tool_executor {
+            use crate::tools::ToolContext;
+            let ctx = ToolContext {
+                cwd: None,
+                sandbox_root: None,
+            };
+            executor.execute(name, args, &ctx).await
+        } else {
+            Err(AgentError::NotImplemented(
+                "tool executor not configured in session".to_string(),
+            ))
+        }
+    }
 }
 
 /// Session 配置
@@ -138,6 +184,8 @@ pub struct SessionConfig {
     pub max_undo_steps: usize,
     /// 可选的模型客户端，用于 RegularTask 等需要调用模型的任务
     pub model: Option<Arc<dyn ModelClient>>,
+    /// 可选的工具执行器，用于工具调用
+    pub tool_executor: Option<Arc<ToolExecutor>>,
 }
 
 impl std::fmt::Debug for SessionConfig {
@@ -151,6 +199,7 @@ impl std::fmt::Debug for SessionConfig {
             .field("mcp_manager", &self.mcp_manager)
             .field("max_undo_steps", &self.max_undo_steps)
             .field("model", &self.model.as_ref().map(|_| "<ModelClient>"))
+            .field("tool_executor", &self.tool_executor.as_ref().map(|_| "<ToolExecutor>"))
             .finish()
     }
 }
@@ -166,6 +215,7 @@ impl Default for SessionConfig {
             mcp_manager: None,
             max_undo_steps: 10,
             model: None,
+            tool_executor: None,
         }
     }
 }
@@ -185,6 +235,7 @@ pub struct Session {
     active_turn: Arc<Mutex<Option<ActiveTurn>>>,
     undo_stack: Arc<Mutex<VecDeque<UndoSnapshot>>>,
     model: Option<Arc<dyn ModelClient>>,
+    tool_executor: Option<Arc<ToolExecutor>>,
 }
 
 impl std::fmt::Debug for Session {
@@ -197,6 +248,7 @@ impl std::fmt::Debug for Session {
             .field("active_turn", &self.active_turn)
             .field("undo_stack", &"<UndoStack>")
             .field("model", &self.model.as_ref().map(|_| "<ModelClient>"))
+            .field("tool_executor", &self.tool_executor.as_ref().map(|_| "<ToolExecutor>"))
             .finish()
     }
 }
@@ -229,6 +281,7 @@ impl Session {
         let event_stream = event_queue.stream();
 
         let model = config.model.clone();
+        let tool_executor = config.tool_executor.clone();
 
         let session = Self {
             history: Arc::new(Mutex::new(ConversationHistory::new())),
@@ -239,6 +292,7 @@ impl Session {
             active_turn: Arc::new(Mutex::new(None)),
             undo_stack: Arc::new(Mutex::new(VecDeque::new())),
             model,
+            tool_executor,
         };
 
         let handle = SessionHandle {
@@ -252,6 +306,7 @@ impl Session {
                 history: Arc::clone(&session.history),
                 event_sender: session.event_sender.clone(),
                 model: session.model.clone(),
+                tool_executor: session.tool_executor.clone(),
             }),
             op_receiver,
         ));
@@ -345,6 +400,7 @@ impl Session {
             history: Arc::clone(&self.history),
             event_sender: self.event_sender.clone(),
             model: self.model.clone(),
+            tool_executor: self.tool_executor.clone(),
         });
 
         tokio::spawn({
