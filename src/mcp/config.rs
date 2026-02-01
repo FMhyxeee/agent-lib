@@ -30,6 +30,10 @@ pub struct ServerConfig {
     #[serde(default)]
     pub headers: HashMap<String, String>,
 
+    /// TLS configuration (for HTTPS/WSS)
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
+
     /// Server-specific timeout
     #[serde(default = "default_timeout")]
     pub timeout: Duration,
@@ -88,6 +92,21 @@ pub struct AuthConfig {
 
     /// Token in query parameter (for some APIs)
     pub query_param: Option<String>,
+
+    /// OAuth2 token URL
+    pub token_url: Option<String>,
+
+    /// OAuth2 client ID
+    pub client_id: Option<String>,
+
+    /// OAuth2 client secret
+    pub client_secret: Option<String>,
+
+    /// OAuth2 scope (space separated)
+    pub scope: Option<String>,
+
+    /// OAuth2 audience (optional)
+    pub audience: Option<String>,
 }
 
 /// Authentication types
@@ -106,6 +125,23 @@ pub enum AuthType {
     /// OAuth 2.1 (for future implementation)
     #[serde(rename = "oauth2")]
     OAuth2,
+}
+
+/// TLS configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TlsConfig {
+    /// CA certificate path (PEM)
+    pub ca_cert_path: Option<String>,
+    /// Client certificate path (PEM)
+    pub client_cert_path: Option<String>,
+    /// Client key path (PEM)
+    pub client_key_path: Option<String>,
+    /// Allow invalid certs (dangerous)
+    #[serde(default)]
+    pub danger_accept_invalid_certs: bool,
+    /// Allow invalid hostnames (dangerous)
+    #[serde(default)]
+    pub danger_accept_invalid_hostnames: bool,
 }
 
 /// Complete MCP configuration
@@ -286,6 +322,19 @@ impl McpConfig {
                 auth.username = auth.username.as_ref().map(|u| Self::expand_env_vars(u));
                 auth.password = auth.password.as_ref().map(|p| Self::expand_env_vars(p));
                 auth.api_key = auth.api_key.as_ref().map(|k| Self::expand_env_vars(k));
+                auth.token_url = auth.token_url.as_ref().map(|t| Self::expand_env_vars(t));
+                auth.client_id = auth.client_id.as_ref().map(|c| Self::expand_env_vars(c));
+                auth.client_secret = auth.client_secret.as_ref().map(|c| Self::expand_env_vars(c));
+                auth.scope = auth.scope.as_ref().map(|s| Self::expand_env_vars(s));
+                auth.audience = auth.audience.as_ref().map(|a| Self::expand_env_vars(a));
+            }
+
+            if let Some(tls) = &mut server.tls {
+                tls.ca_cert_path = tls.ca_cert_path.as_ref().map(|p| Self::expand_env_vars(p));
+                tls.client_cert_path =
+                    tls.client_cert_path.as_ref().map(|p| Self::expand_env_vars(p));
+                tls.client_key_path =
+                    tls.client_key_path.as_ref().map(|p| Self::expand_env_vars(p));
             }
         }
 
@@ -376,11 +425,27 @@ impl McpConfig {
             // Validate authentication configuration
             if let Some(ref auth) = server.auth {
                 match auth.auth_type {
-                    AuthType::Bearer | AuthType::Basic | AuthType::ApiKey => {
-                        if auth.token.is_none() && auth.api_key.is_none() {
+                    AuthType::Bearer => {
+                        if auth.token.is_none() {
                             errors.push(format!(
-                                "Server '{}' requires token/api_key for {:?} auth",
-                                server.name, auth.auth_type
+                                "Server '{}' requires token for Bearer auth",
+                                server.name
+                            ));
+                        }
+                    }
+                    AuthType::Basic => {
+                        if auth.username.is_none() || auth.password.is_none() {
+                            errors.push(format!(
+                                "Server '{}' requires username/password for Basic auth",
+                                server.name
+                            ));
+                        }
+                    }
+                    AuthType::ApiKey => {
+                        if auth.api_key.is_none() {
+                            errors.push(format!(
+                                "Server '{}' requires api_key for ApiKey auth",
+                                server.name
                             ));
                         }
                     }
@@ -393,10 +458,16 @@ impl McpConfig {
                         }
                     }
                     AuthType::OAuth2 => {
-                        errors.push(format!(
-                            "Server '{}' has OAuth2 auth not yet supported",
-                            server.name
-                        ));
+                        let has_static_token = auth.token.is_some();
+                        let has_flow = auth.token_url.is_some()
+                            && auth.client_id.is_some()
+                            && auth.client_secret.is_some();
+                        if !has_static_token && !has_flow {
+                            errors.push(format!(
+                                "Server '{}' requires token or token_url/client_id/client_secret for OAuth2",
+                                server.name
+                            ));
+                        }
                     }
                 }
             }
@@ -416,7 +487,10 @@ impl McpConfig {
     pub async fn into_manager(self) -> AgentResult<Arc<crate::mcp::McpManager>> {
         use crate::mcp::McpManager;
 
-        let manager = McpManager::with_timeout(self.general.default_timeout);
+        let manager = McpManager::with_timeout_and_retries(
+            self.general.default_timeout,
+            self.general.max_retries,
+        );
 
         for server_config in self.servers {
             if !server_config.enabled {
@@ -499,6 +573,7 @@ mod tests {
             },
             auth: None,
             headers: HashMap::new(),
+            tls: None,
             timeout: Duration::from_secs(30),
             enabled: true,
             env: HashMap::new(),
@@ -515,6 +590,7 @@ mod tests {
             },
             auth: None,
             headers: HashMap::new(),
+            tls: None,
             timeout: Duration::from_secs(30),
             enabled: true,
             env: HashMap::new(),

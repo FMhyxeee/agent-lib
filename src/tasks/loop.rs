@@ -850,10 +850,23 @@ async fn handle_handoff(sess: &Session, target_agent: String, context: serde_jso
         "Handoff initiated"
     );
 
-    // TODO: 如果有 Agent 注册表，这里可以通知目标 Agent
-    // if let Some(target) = AGENT_REGISTRY.get(&target_agent) {
-    //     target.receive_handoff(handoff_context).await?;
-    // }
+    // 如果有 Agent 注册表，通知目标 Agent
+    if let Some(receiver) = crate::agent::global_agent_registry()
+        .get(&target_agent)
+        .await
+    {
+        if let Err(err) = receiver.receive_handoff(handoff_context.clone()).await {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("handoff notify failed: {err}"),
+            })
+            .await;
+        }
+    } else {
+        sess.emit_event(crate::protocol::Event::Warning {
+            message: format!("handoff target not registered: {target_agent}"),
+        })
+        .await;
+    }
 
     // 发送完成事件
     sess.emit_event(crate::protocol::Event::TurnComplete {

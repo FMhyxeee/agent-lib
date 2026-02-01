@@ -18,6 +18,8 @@ pub struct McpManager {
     servers: Mutex<ServerMap>,
     /// Default timeout for MCP operations
     default_timeout: Option<Duration>,
+    /// Default max retries for MCP operations
+    max_retries: usize,
 }
 
 impl McpManager {
@@ -26,6 +28,7 @@ impl McpManager {
         Arc::new(Self {
             servers: Mutex::new(HashMap::new()),
             default_timeout: Some(Duration::from_secs(30)),
+            max_retries: 3,
         })
     }
 
@@ -34,6 +37,16 @@ impl McpManager {
         Arc::new(Self {
             servers: Mutex::new(HashMap::new()),
             default_timeout: Some(timeout),
+            max_retries: 3,
+        })
+    }
+
+    /// Create a new MCP manager with custom timeout and retries
+    pub fn with_timeout_and_retries(timeout: Duration, max_retries: usize) -> Arc<Self> {
+        Arc::new(Self {
+            servers: Mutex::new(HashMap::new()),
+            default_timeout: Some(timeout),
+            max_retries,
         })
     }
 
@@ -219,7 +232,8 @@ impl McpManager {
         config.validate()?;
 
         // Create manager with default timeout from config
-        let manager = Self::with_timeout(config.general.default_timeout);
+        let manager =
+            Self::with_timeout_and_retries(config.general.default_timeout, config.general.max_retries);
 
         // Add servers from configuration
         for server_config in config.servers {
@@ -296,6 +310,8 @@ impl McpManager {
             headers: config.headers.clone(),
             env: config.env.clone(),
             timeout: config.timeout,
+            max_retries: self.max_retries,
+            tls: config.tls.clone(),
         })
     }
 
@@ -343,6 +359,7 @@ impl Default for McpManager {
         Self {
             servers: Mutex::new(HashMap::new()),
             default_timeout: Some(Duration::from_secs(30)),
+            max_retries: 3,
         }
     }
 }

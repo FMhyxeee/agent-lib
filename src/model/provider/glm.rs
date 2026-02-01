@@ -147,10 +147,26 @@ impl ModelClient for GlmProvider {
             .await
             .map_err(|err| AgentError::Model(format!("glm request failed: {err}")))?;
 
-        let response: GlmChatResponse = response
-            .json()
+        let status = response.status();
+        let text = response
+            .text()
             .await
-            .map_err(|err| AgentError::Model(format!("glm parse failed: {err}")))?;
+            .map_err(|err| AgentError::Model(format!("glm read failed: {err}")))?;
+
+        if !status.is_success() {
+            return Err(AgentError::Model(format!(
+                "glm request failed (status: {}): {}",
+                status,
+                truncate_response(&text)
+            )));
+        }
+
+        let response: GlmChatResponse = serde_json::from_str(&text).map_err(|err| {
+            AgentError::Model(format!(
+                "glm parse failed: {err}\nresponse: {}",
+                truncate_response(&text)
+            ))
+        })?;
 
         let choice = response.choices.first();
         let message = choice.and_then(|c| c.message.as_ref());
@@ -212,6 +228,19 @@ impl ModelClient for GlmProvider {
             .send()
             .await
             .map_err(|err| AgentError::Model(format!("glm request failed: {err}")))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "failed to read error body".to_string());
+            return Err(AgentError::Model(format!(
+                "glm streaming request failed (status: {}): {}",
+                status,
+                truncate_response(&text)
+            )));
+        }
 
         let mut stream = response.bytes_stream();
         let (sender, receiver) = mpsc::channel(64);
@@ -341,6 +370,15 @@ fn auth_headers(api_key: &str) -> AgentResult<HeaderMap> {
     );
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     Ok(headers)
+}
+
+fn truncate_response(body: &str) -> String {
+    const MAX_LEN: usize = 512;
+    if body.len() <= MAX_LEN {
+        body.to_string()
+    } else {
+        format!("{}... ({} bytes)", &body[..MAX_LEN], body.len())
+    }
 }
 
 fn parse_delta(payload: &str) -> AgentResult<Option<String>> {

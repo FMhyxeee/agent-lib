@@ -10,7 +10,10 @@ pub mod token;
 pub mod tools;
 pub mod trace;
 
-pub use agent::{Agent, AgentBuilder, AgentConfig, Orchestrator};
+pub use agent::{
+    Agent, AgentBuilder, AgentConfig, AgentRegistry, HandoffReceiver, Orchestrator,
+    global_agent_registry,
+};
 pub use error::{AgentError, AgentResult};
 pub use protocol::{Event, Op};
 pub use session::{

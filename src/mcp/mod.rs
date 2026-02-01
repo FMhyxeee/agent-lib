@@ -5,7 +5,9 @@ mod protocol;
 mod transport;
 
 pub use client::McpClient;
-pub use config::{AuthConfig, AuthType, ConfigLoader, McpConfig, ServerConfig, TransportType};
+pub use config::{
+    AuthConfig, AuthType, ConfigLoader, McpConfig, ServerConfig, TlsConfig, TransportType,
+};
 pub use manager::McpManager;
 pub use protocol::{
     McpPrompt, McpPromptArgument, McpPromptContent, McpPromptMessage, McpPromptResult,

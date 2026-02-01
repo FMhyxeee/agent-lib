@@ -3,6 +3,7 @@ mod definition;
 mod handoff;
 mod mcp_integration;
 mod orchestrator;
+mod registry;
 
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ pub use config::AgentConfig;
 pub use definition::AgentDefinition;
 pub use handoff::HandoffManager;
 pub use orchestrator::Orchestrator;
+pub use registry::{AgentRegistry, HandoffReceiver, global_agent_registry};
 
 pub struct Agent {
     config: AgentConfig,
