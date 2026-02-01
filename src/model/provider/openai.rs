@@ -30,6 +30,7 @@ impl OpenAiProvider {
 
 #[async_trait]
 impl ModelClient for OpenAiProvider {
+    #[allow(deprecated)]
     async fn chat(
         &self,
         messages: Vec<Message>,
@@ -37,7 +38,6 @@ impl ModelClient for OpenAiProvider {
     ) -> AgentResult<ModelResponse> {
         #[cfg(feature = "openai")]
         {
-            #[allow(deprecated)]
             use async_openai::config::OpenAIConfig;
             use async_openai::types::{
                 ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
@@ -190,6 +190,7 @@ impl ModelClient for OpenAiProvider {
         }
     }
 
+    #[allow(deprecated)]
     async fn chat_stream(
         &self,
         messages: Vec<Message>,
@@ -197,7 +198,6 @@ impl ModelClient for OpenAiProvider {
     ) -> AgentResult<Pin<Box<dyn futures::Stream<Item = StreamChunk> + Send>>> {
         #[cfg(feature = "openai")]
         {
-            #[allow(deprecated)]
             use async_openai::config::OpenAIConfig;
             use async_openai::types::{
                 ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
