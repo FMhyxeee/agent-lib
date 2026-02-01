@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
@@ -136,6 +136,10 @@ impl McpTransport {
                         .await
                         .map_err(|err| AgentError::Mcp(format!("write failed: {err}")))?;
                     stdin
+                        .write_all(b"\n")
+                        .await
+                        .map_err(|err| AgentError::Mcp(format!("write newline failed: {err}")))?;
+                    stdin
                         .flush()
                         .await
                         .map_err(|err| AgentError::Mcp(format!("flush failed: {err}")))?;
@@ -163,19 +167,23 @@ impl McpTransport {
                 stream
                     .write_all(payload.as_bytes())
                     .await
-                    .map_err(|err| AgentError::Mcp(format!("write failed: {err}")))?;
+                    .map_err(|err| AgentError::Mcp(format!("tcp write failed: {err}")))?;
+                stream
+                    .write_all(b"\n")
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("tcp write newline failed: {err}")))?;
                 stream
                     .flush()
                     .await
-                    .map_err(|err| AgentError::Mcp(format!("flush failed: {err}")))?;
+                    .map_err(|err| AgentError::Mcp(format!("tcp flush failed: {err}")))?;
 
-                let mut buffer = vec![0u8; 1024];
-                let n = stream
-                    .read(&mut buffer)
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                reader
+                    .read_line(&mut line)
                     .await
-                    .map_err(|err| AgentError::Mcp(format!("read failed: {err}")))?;
-                let response = String::from_utf8_lossy(&buffer[..n]);
-                serde_json::from_str::<McpResponse>(&response)
+                    .map_err(|err| AgentError::Mcp(format!("tcp read failed: {err}")))?;
+                serde_json::from_str::<McpResponse>(&line)
                     .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
             }
             TransportKind::Http(url) => self.send_http_request(url, request).await,
