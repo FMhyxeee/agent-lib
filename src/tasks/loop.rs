@@ -7,6 +7,7 @@ use crate::protocol::{
     ReasoningSummary, ReviewDecision, SandboxPolicy,
 };
 use crate::session::{Session, TurnContext};
+use crate::skills::{Skill, SkillLoader, SkillSource};
 use crate::tasks::CompactTask;
 
 /// Submission 结构
@@ -153,6 +154,15 @@ pub async fn submission_loop(sess: Arc<Session>, mut rx_sub: mpsc::Receiver<Subm
 
             Op::ListSkills { cwds, force_reload } => {
                 handle_list_skills(&sess, cwds, force_reload).await;
+            }
+            Op::GetSkill { name } => {
+                handle_get_skill(&sess, name).await;
+            }
+            Op::ApplySkill { name } => {
+                handle_apply_skill(&sess, name).await;
+            }
+            Op::ReadSkillFile { skill_name, file_path } => {
+                handle_read_skill_file(&sess, skill_name, file_path).await;
             }
 
             Op::ListCustomPrompts => {
@@ -1017,72 +1027,256 @@ async fn handle_list_skills(
 ) {
     debug!(cwds = ?cwds, force_reload = force_reload, "Handling list skills");
 
-    let mut skills: Vec<crate::protocol::SkillEntry> = Vec::new();
-
-    // 扫描指定目录获取技能
-    for cwd in &cwds {
-        let skills_dir = cwd.join(".claude").join("skills");
-        if let Ok(mut dir_skills) = scan_skills_directory(&skills_dir).await {
-            skills.append(&mut dir_skills);
+    let skills = match load_skills_for_request(sess, &cwds).await {
+        Ok(list) => list,
+        Err(err) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("加载技能失败: {err}"),
+            })
+            .await;
+            Vec::new()
         }
+    };
+
+    let mut registry = crate::skills::SkillRegistry::new();
+    for skill in skills {
+        registry.register(skill);
     }
 
-    // 如果没有指定目录，尝试当前目录
-    if cwds.is_empty() {
-        if let Ok(current_dir_skills) = scan_skills_directory(std::path::Path::new(".claude/skills")).await {
-            skills = current_dir_skills;
-        }
-    }
+    let entries = registry.list();
 
-    sess.emit_event(crate::protocol::Event::ListSkillsResponse {
-        skills: skills.clone(),
-    })
-    .await;
+    sess.emit_event(crate::protocol::Event::ListSkillsResponse { skills: entries })
+        .await;
 
     if force_reload {
         sess.emit_event(crate::protocol::Event::Warning {
-            message: format!("Found {} skill(s)", skills.len()),
+            message: "Skills list refreshed".to_string(),
         })
         .await;
     }
 }
 
-/// 扫描技能目录
-async fn scan_skills_directory(dir: &std::path::Path) -> std::io::Result<Vec<crate::protocol::SkillEntry>> {
-    let mut skills = Vec::new();
+/// 处理获取技能内容请求
+async fn handle_get_skill(sess: &Session, name: String) {
+    debug!(name = %name, "Handling get skill");
 
-    if !dir.exists() {
-        return Ok(skills);
+    let skill = match load_skill_by_name(sess, &name).await {
+        Ok(Some(skill)) => skill,
+        Ok(None) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("未找到技能: {name}"),
+            })
+            .await;
+            return;
+        }
+        Err(err) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("加载技能失败: {err}"),
+            })
+            .await;
+            return;
+        }
+    };
+
+    let auxiliary_files = skill
+        .auxiliary_files
+        .iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect();
+
+    sess.emit_event(crate::protocol::Event::SkillContent {
+        name: skill.metadata.name.clone(),
+        content: skill.content.clone(),
+        auxiliary_files,
+    })
+    .await;
+}
+
+/// 处理应用技能请求
+async fn handle_apply_skill(sess: &Session, name: String) {
+    debug!(name = %name, "Handling apply skill");
+
+    let skill = match load_skill_by_name(sess, &name).await {
+        Ok(Some(skill)) => skill,
+        Ok(None) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("未找到技能: {name}"),
+            })
+            .await;
+            return;
+        }
+        Err(err) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("加载技能失败: {err}"),
+            })
+            .await;
+            return;
+        }
+    };
+
+    sess.emit_event(crate::protocol::Event::SkillApplied {
+        name: skill.metadata.name.clone(),
+    })
+    .await;
+}
+
+/// 处理读取技能文件请求
+async fn handle_read_skill_file(sess: &Session, skill_name: String, file_path: String) {
+    debug!(skill_name = %skill_name, file_path = %file_path, "Handling read skill file");
+
+    let skill = match load_skill_by_name(sess, &skill_name).await {
+        Ok(Some(skill)) => skill,
+        Ok(None) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("未找到技能: {skill_name}"),
+            })
+            .await;
+            return;
+        }
+        Err(err) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("加载技能失败: {err}"),
+            })
+            .await;
+            return;
+        }
+    };
+
+    let requested = skill.directory.join(&file_path);
+    let skill_dir = match tokio::fs::canonicalize(&skill.directory).await {
+        Ok(dir) => dir,
+        Err(err) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("解析技能目录失败: {err}"),
+            })
+            .await;
+            return;
+        }
+    };
+
+    let requested = match tokio::fs::canonicalize(&requested).await {
+        Ok(path) => path,
+        Err(err) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("读取技能文件失败: {err}"),
+            })
+            .await;
+            return;
+        }
+    };
+
+    if !requested.starts_with(&skill_dir) {
+        sess.emit_event(crate::protocol::Event::Warning {
+            message: "技能文件路径无效".to_string(),
+        })
+        .await;
+        return;
     }
 
-    let mut entries = tokio::fs::read_dir(dir).await?;
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
+    let content = match tokio::fs::read_to_string(&requested).await {
+        Ok(content) => content,
+        Err(err) => {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: format!("读取技能文件失败: {err}"),
+            })
+            .await;
+            return;
+        }
+    };
 
-        // 支持的技能文件扩展名
-        let is_skill_file = path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| matches!(ext, "md" | "txt" | "rs" | "py" | "js" | "ts"))
-            .unwrap_or(false);
+    sess.emit_event(crate::protocol::Event::SkillFileContent {
+        skill_name,
+        file_path,
+        content,
+    })
+    .await;
+}
 
-        if is_skill_file {
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-
-            let description = format!("Skill file: {}", path.display());
-
-            skills.push(crate::protocol::SkillEntry {
-                name,
-                description,
-                path,
-            });
+async fn load_skill_by_name(sess: &Session, name: &str) -> crate::error::AgentResult<Option<Skill>> {
+    if let Some(registry) = sess.get_skill_registry() {
+        if let Some(skill) = registry.get(name) {
+            return Ok(Some(skill.clone()));
         }
     }
 
+    let skills = load_skills_for_request(sess, &Vec::new()).await?;
+    Ok(skills.into_iter().find(|skill| skill.metadata.name == name))
+}
+
+async fn load_skills_for_request(
+    sess: &Session,
+    cwds: &Vec<std::path::PathBuf>,
+) -> crate::error::AgentResult<Vec<Skill>> {
+    let loader = SkillLoader::new();
+    let mut skills = Vec::new();
+
+    if let Some(config) = sess.get_skill_config() {
+        if !config.enabled {
+            return Ok(skills);
+        }
+
+        if !cwds.is_empty() {
+            for cwd in cwds {
+                let dir = cwd.join(".cursor").join("skills");
+                let mut loaded = loader
+                    .load_from_directory(&dir, &SkillSource::Custom(dir.clone()))
+                    .await?;
+                skills.append(&mut loaded);
+            }
+            return Ok(skills);
+        }
+
+        if let Some(personal_dir) = &config.personal_dir {
+            let mut loaded = loader
+                .load_from_directory(personal_dir, &SkillSource::Personal)
+                .await?;
+            skills.append(&mut loaded);
+        } else if let Some(home) = skill_home_dir() {
+            let dir = home.join(".cursor").join("skills");
+            let mut loaded = loader
+                .load_from_directory(&dir, &SkillSource::Personal)
+                .await?;
+            skills.append(&mut loaded);
+        }
+
+        if config.project_dirs.is_empty() {
+            let dir = std::path::PathBuf::from(".cursor").join("skills");
+            let mut loaded = loader
+                .load_from_directory(&dir, &SkillSource::Project)
+                .await?;
+            skills.append(&mut loaded);
+        } else {
+            for dir in &config.project_dirs {
+                let mut loaded = loader
+                    .load_from_directory(dir, &SkillSource::Project)
+                    .await?;
+                skills.append(&mut loaded);
+            }
+        }
+
+        return Ok(skills);
+    }
+
+    if !cwds.is_empty() {
+        for cwd in cwds {
+            let dir = cwd.join(".cursor").join("skills");
+            let mut loaded = loader
+                .load_from_directory(&dir, &SkillSource::Custom(dir.clone()))
+                .await?;
+            skills.append(&mut loaded);
+        }
+        return Ok(skills);
+    }
+
+    skills = loader.load_all().await?;
     Ok(skills)
+}
+
+fn skill_home_dir() -> Option<std::path::PathBuf> {
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        return Some(std::path::PathBuf::from(home));
+    }
+    std::env::var("HOME").ok().map(std::path::PathBuf::from)
 }
 
 /// 处理列出自定义提示请求

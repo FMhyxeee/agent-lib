@@ -8,6 +8,7 @@ tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 futures = "0.3"
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["io"] }
@@ -31,12 +32,13 @@ version = "0.5"
 optional = true
 
 [features]
-default = ["openai", "builtin-tools"]
+default = ["openai", "builtin-tools", "skills"]
 openai = ["dep:async-openai"]
 anthropic = []
 local-llm = []
 builtin-tools = []
 mcp = []
+skills = []
 bench = ["dep:criterion"]
 
 [[bench]]

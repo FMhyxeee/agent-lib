@@ -138,6 +138,8 @@ pub struct SkillEntry {
     pub name: String,
     pub description: String,
     pub path: PathBuf,
+    pub source: String,
+    pub has_auxiliary_files: bool,
 }
 
 /// Turn 中止原因

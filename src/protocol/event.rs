@@ -59,6 +59,20 @@ pub enum Event {
     ListCustomPromptsResponse { prompts: Vec<CustomPromptInfo> },
     /// 技能列表响应
     ListSkillsResponse { skills: Vec<SkillEntry> },
+    /// 技能内容响应
+    SkillContent {
+        name: String,
+        content: String,
+        auxiliary_files: Vec<String>,
+    },
+    /// 技能已应用
+    SkillApplied { name: String },
+    /// 技能文件内容
+    SkillFileContent {
+        skill_name: String,
+        file_path: String,
+        content: String,
+    },
     /// 线程回滚完成
     ThreadRolledBack { num_turns: u32 },
     /// 撤销完成

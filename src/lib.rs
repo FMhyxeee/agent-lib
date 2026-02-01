@@ -4,6 +4,7 @@ pub mod mcp;
 pub mod model;
 pub mod protocol;
 pub mod session;
+pub mod skills;
 pub mod tasks;
 pub mod token;
 pub mod tools;
@@ -34,3 +35,5 @@ pub use protocol::{
     McpToolInfo, ReasoningEffort, ReasoningSummary, ReviewDecision, ReviewRequest, SandboxPolicy,
     SkillEntry, TurnAbortReason, UserInputItem, UserInputResponse,
 };
+
+pub use skills::{Skill, SkillConfig, SkillLoader, SkillMetadata, SkillRegistry, SkillSource};

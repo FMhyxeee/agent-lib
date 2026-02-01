@@ -10,6 +10,7 @@ use crate::mcp::McpManager;
 use crate::model::{Message, ModelClient, ModelResponse};
 use crate::protocol::{ApprovalPolicy, Event, EventQueue, Op, SubmissionQueue};
 use crate::session::{ConversationHistory, SessionState};
+use crate::skills::{SkillConfig, SkillRegistry};
 use crate::tasks::{RunningTask, SessionTask};
 use crate::tools::{ToolDef, ToolExecutor};
 use chrono;
@@ -186,6 +187,10 @@ pub struct SessionConfig {
     pub model: Option<Arc<dyn ModelClient>>,
     /// 可选的工具执行器，用于工具调用
     pub tool_executor: Option<Arc<ToolExecutor>>,
+    /// 可选的技能配置
+    pub skill_config: Option<SkillConfig>,
+    /// 可选的技能注册表
+    pub skill_registry: Option<Arc<SkillRegistry>>,
 }
 
 impl std::fmt::Debug for SessionConfig {
@@ -200,6 +205,11 @@ impl std::fmt::Debug for SessionConfig {
             .field("max_undo_steps", &self.max_undo_steps)
             .field("model", &self.model.as_ref().map(|_| "<ModelClient>"))
             .field("tool_executor", &self.tool_executor.as_ref().map(|_| "<ToolExecutor>"))
+            .field("skill_config", &self.skill_config)
+            .field(
+                "skill_registry",
+                &self.skill_registry.as_ref().map(|_| "<SkillRegistry>"),
+            )
             .finish()
     }
 }
@@ -216,6 +226,8 @@ impl Default for SessionConfig {
             max_undo_steps: 10,
             model: None,
             tool_executor: None,
+            skill_config: None,
+            skill_registry: None,
         }
     }
 }
@@ -547,6 +559,16 @@ impl Session {
     /// 获取 MCP Manager
     pub fn get_mcp_manager(&self) -> Option<Arc<McpManager>> {
         self.config.mcp_manager.clone()
+    }
+
+    /// 获取技能配置
+    pub fn get_skill_config(&self) -> Option<SkillConfig> {
+        self.config.skill_config.clone()
+    }
+
+    /// 获取技能注册表
+    pub fn get_skill_registry(&self) -> Option<Arc<SkillRegistry>> {
+        self.config.skill_registry.clone()
     }
 
     /// 创建快照

@@ -189,6 +189,8 @@ async fn test_session_config() {
         max_undo_steps: 10,
         model: None,
         tool_executor: None,
+        skill_config: None,
+        skill_registry: None,
     };
 
     assert_eq!(config.queue_buffer, 128);

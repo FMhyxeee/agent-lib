@@ -215,6 +215,12 @@ pub enum Op {
         cwds: Vec<PathBuf>,
         force_reload: bool,
     },
+    /// 获取技能内容
+    GetSkill { name: String },
+    /// 应用技能到当前上下文
+    ApplySkill { name: String },
+    /// 读取技能辅助文件
+    ReadSkillFile { skill_name: String, file_path: String },
 
     // === 模型管理操作 ===
     /// 列出可用模型
