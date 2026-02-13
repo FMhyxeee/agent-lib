@@ -55,6 +55,11 @@ cargo run --example agent_with_mcp_manager  # Agent with MCP manager
 cargo run --example simple_mcp_test    # Simple MCP testing
 cargo run --example mock_filesystem_mcp  # Mock MCP filesystem server
 
+# GLM Coding Plan examples (require API keys in .env)
+set GLM_API_KEY=your_key
+cargo run --example glm_coding_plan     # GLM Coding Plan provider demo
+cargo run --example test_glm5_coding    # GLM-5 standard vs coding comparison
+
 # E2E Testing examples (require API keys)
 set GLM_API_KEY=your_key
 cargo run --example regular_task_glm_test  # RegularTask E2E test with GLM
@@ -90,9 +95,14 @@ This library uses an **event-driven architecture** based on SQ/EQ (Submission/Ev
 
 2. **Model Abstraction** (`src/model/`)
    - `ModelClient` trait for LLM provider abstraction
-   - Built-in providers: `OpenAiProvider`, `GlmProvider`
+   - Built-in providers: `OpenAiProvider`, `GlmProvider`, `GlmCodingPlanProvider`
    - Streaming support via `chat_stream()`
-   - GLM models: `GLM-4-Flash`, `GLM-4`, `GLM-4-Plus`, `GLM-4-Air`
+   - GLM models:
+     - **Standard API** (`GlmProvider`): `GLM-5` (200K context), `GLM-4.7` (200K), `GLM-4-7-FlashX` (200K)
+     - **Coding Plan API** (`GlmCodingPlanProvider`): `GLM-5` (200K), `GLM-4.7` (200K), `GLM-4.7-FlashX` (200K), `GLM-5`
+     - Requires separate subscription from https://www.bigmodel.cn/glm-coding
+     - Supports both GLM-5 (200K context) and GLM-4.7 series (200K context)
+     - Use `GlmCodingPlanProvider` for Coding Plan API access
 
 3. **Tool System** (`src/tools/`)
    - `Tool` trait for pluggable capabilities
