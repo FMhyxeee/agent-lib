@@ -113,10 +113,16 @@ impl ConversationHistory {
     /// 压缩历史
     ///
     /// 保留最近 `keep_recent` 条消息，其余部分被摘要替换。
+    ///
+    /// 关于 P0-2 的说明：split_off 的实现是正确的
+    /// - split_off(len - keep) 保留后面的 keep 条消息(最近的)
+    /// - truncate(keep) 会保留前面的 keep 条消息(旧的)，这是错误的
     pub fn compact(&mut self, keep_recent: usize, summary: String) {
         if self.messages.len() > keep_recent {
             let original_count = self.message_tokens();
 
+            // 使用 split_off 保留后面的 keep_recent 条消息（最近的）
+            // 这会返回并删除前面的旧消息
             self.messages = self.messages.split_off(self.messages.len() - keep_recent);
 
             self.compacted_summaries.push(CompactedSummary {
