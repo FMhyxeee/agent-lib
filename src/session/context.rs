@@ -76,7 +76,7 @@ impl Default for TurnContext {
             final_output_json_schema: None,
             truncation_policy: None,
             auto_compact_token_limit: None,
-            context_window: 200_000, // 默认上下文窗口 (GLM 模型)
+            context_window: 200_000,      // 默认上下文窗口 (GLM 模型)
             tool_output_max_size: 50_000, // 默认工具输出最大 50K 字符
         }
     }

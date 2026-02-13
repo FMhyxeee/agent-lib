@@ -205,7 +205,10 @@ pub enum Op {
     /// 列出 MCP 提示
     ListMcpPrompts,
     /// 获取 MCP 提示
-    GetMcpPrompt { name: String, arguments: Option<Value> },
+    GetMcpPrompt {
+        name: String,
+        arguments: Option<Value>,
+    },
     /// 刷新 MCP 服务器
     RefreshMcpServers { config: McpServerRefreshConfig },
     /// 列出自定义提示
@@ -220,7 +223,10 @@ pub enum Op {
     /// 应用技能到当前上下文
     ApplySkill { name: String },
     /// 读取技能辅助文件
-    ReadSkillFile { skill_name: String, file_path: String },
+    ReadSkillFile {
+        skill_name: String,
+        file_path: String,
+    },
 
     // === 模型管理操作 ===
     /// 列出可用模型

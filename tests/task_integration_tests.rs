@@ -78,6 +78,12 @@ impl FakeSession {
 
 #[async_trait]
 impl TaskSession for FakeSession {
+    async fn push_message(&self, message: Message) {
+        let mut history = self.history.lock().await;
+        history.push(message);
+        // 修复测试：确保 push_message 写回历史
+    }
+
     async fn history(&self) -> ConversationHistory {
         self.history.lock().await.clone()
     }

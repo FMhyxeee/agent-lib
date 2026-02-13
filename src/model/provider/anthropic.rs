@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[cfg(feature = "anthropic")]
@@ -80,7 +80,9 @@ struct AnthropicMessage {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(dead_code)]
 enum AnthropicContentBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -131,7 +133,9 @@ struct AnthropicStreamEvent {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(dead_code)]
 enum AnthropicStreamData {
-    ContentBlockDelta { delta: AnthropicDelta },
+    ContentBlockDelta {
+        delta: AnthropicDelta,
+    },
     #[serde(other)]
     Other,
 }
@@ -140,7 +144,9 @@ enum AnthropicStreamData {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(dead_code)]
 enum AnthropicDelta {
-    TextDelta { text: String },
+    TextDelta {
+        text: String,
+    },
     #[serde(other)]
     Other,
 }

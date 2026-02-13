@@ -22,9 +22,7 @@ pub use session::{
 pub use tasks::{
     CompactTask, RegularTask, RunningTask, SessionTask, Submission, TaskKind, submission_loop,
 };
-pub use token::{
-    TokenCounter, TruncationMode, TruncationPolicy, count_tokens,
-};
+pub use token::{TokenCounter, TruncationMode, TruncationPolicy, count_tokens};
 
 // Re-export MCP types for convenience
 pub use mcp::{

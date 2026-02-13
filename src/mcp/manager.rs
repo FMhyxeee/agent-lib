@@ -232,8 +232,10 @@ impl McpManager {
         config.validate()?;
 
         // Create manager with default timeout from config
-        let manager =
-            Self::with_timeout_and_retries(config.general.default_timeout, config.general.max_retries);
+        let manager = Self::with_timeout_and_retries(
+            config.general.default_timeout,
+            config.general.max_retries,
+        );
 
         // Add servers from configuration
         for server_config in config.servers {

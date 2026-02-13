@@ -4,7 +4,10 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::AgentError;
 use crate::model::TokenUsage;
-use crate::protocol::{CompactedItem, CustomPromptInfo, McpPromptInfo, McpResourceInfo, McpToolInfo, ModelInfo, PromptMessage, SkillEntry, TurnAbortReason};
+use crate::protocol::{
+    CompactedItem, CustomPromptInfo, McpPromptInfo, McpResourceInfo, McpToolInfo, ModelInfo,
+    PromptMessage, SkillEntry, TurnAbortReason,
+};
 use crate::tools::ToolResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

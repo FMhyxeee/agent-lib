@@ -324,17 +324,24 @@ impl McpConfig {
                 auth.api_key = auth.api_key.as_ref().map(|k| Self::expand_env_vars(k));
                 auth.token_url = auth.token_url.as_ref().map(|t| Self::expand_env_vars(t));
                 auth.client_id = auth.client_id.as_ref().map(|c| Self::expand_env_vars(c));
-                auth.client_secret = auth.client_secret.as_ref().map(|c| Self::expand_env_vars(c));
+                auth.client_secret = auth
+                    .client_secret
+                    .as_ref()
+                    .map(|c| Self::expand_env_vars(c));
                 auth.scope = auth.scope.as_ref().map(|s| Self::expand_env_vars(s));
                 auth.audience = auth.audience.as_ref().map(|a| Self::expand_env_vars(a));
             }
 
             if let Some(tls) = &mut server.tls {
                 tls.ca_cert_path = tls.ca_cert_path.as_ref().map(|p| Self::expand_env_vars(p));
-                tls.client_cert_path =
-                    tls.client_cert_path.as_ref().map(|p| Self::expand_env_vars(p));
-                tls.client_key_path =
-                    tls.client_key_path.as_ref().map(|p| Self::expand_env_vars(p));
+                tls.client_cert_path = tls
+                    .client_cert_path
+                    .as_ref()
+                    .map(|p| Self::expand_env_vars(p));
+                tls.client_key_path = tls
+                    .client_key_path
+                    .as_ref()
+                    .map(|p| Self::expand_env_vars(p));
             }
         }
 

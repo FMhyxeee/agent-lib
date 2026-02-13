@@ -76,15 +76,11 @@ impl SkillParser {
         })?;
 
         if metadata.name.trim().is_empty() {
-            return Err(AgentError::InvalidConfig(
-                "技能名称不能为空".to_string(),
-            ));
+            return Err(AgentError::InvalidConfig("技能名称不能为空".to_string()));
         }
 
         if metadata.description.trim().is_empty() {
-            return Err(AgentError::InvalidConfig(
-                "技能描述不能为空".to_string(),
-            ));
+            return Err(AgentError::InvalidConfig("技能描述不能为空".to_string()));
         }
 
         Ok((metadata, body_lines.join("\n")))

@@ -10,7 +10,7 @@ pub use config::{
 };
 pub use manager::McpManager;
 pub use protocol::{
-    McpPrompt, McpPromptArgument, McpPromptContent, McpPromptMessage, McpPromptResult,
-    McpRequest, McpResource, McpResourceContent, McpResponse, McpTool, McpToolCall,
+    McpPrompt, McpPromptArgument, McpPromptContent, McpPromptMessage, McpPromptResult, McpRequest,
+    McpResource, McpResourceContent, McpResponse, McpTool, McpToolCall,
 };
 pub use transport::{EnhancedTransportConfig, McpTransport, TransportConfig};

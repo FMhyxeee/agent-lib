@@ -87,27 +87,31 @@ impl ModelClient for OpenAiProvider {
                                 .collect();
                             ChatCompletionRequestMessage::Assistant(
                                 ChatCompletionRequestAssistantMessage {
-                                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                                        msg.content,
-                                    )),
+                                    content: Some(
+                                        ChatCompletionRequestAssistantMessageContent::Text(
+                                            msg.content,
+                                        ),
+                                    ),
                                     refusal: None,
                                     tool_calls: Some(openai_tool_calls),
                                     name: None,
                                     function_call: None,
-                                                                    },
+                                },
                             )
                         } else {
                             // 普通助手消息
                             ChatCompletionRequestMessage::Assistant(
                                 ChatCompletionRequestAssistantMessage {
-                                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                                        msg.content,
-                                    )),
+                                    content: Some(
+                                        ChatCompletionRequestAssistantMessageContent::Text(
+                                            msg.content,
+                                        ),
+                                    ),
                                     refusal: None,
                                     tool_calls: None,
                                     name: None,
                                     function_call: None,
-                                                                    },
+                                },
                             )
                         }
                     }
@@ -246,26 +250,30 @@ impl ModelClient for OpenAiProvider {
                                 .collect();
                             ChatCompletionRequestMessage::Assistant(
                                 ChatCompletionRequestAssistantMessage {
-                                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                                        msg.content,
-                                    )),
+                                    content: Some(
+                                        ChatCompletionRequestAssistantMessageContent::Text(
+                                            msg.content,
+                                        ),
+                                    ),
                                     refusal: None,
                                     tool_calls: Some(openai_tool_calls),
                                     name: None,
                                     function_call: None,
-                                                                    },
+                                },
                             )
                         } else {
                             ChatCompletionRequestMessage::Assistant(
                                 ChatCompletionRequestAssistantMessage {
-                                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                                        msg.content,
-                                    )),
+                                    content: Some(
+                                        ChatCompletionRequestAssistantMessageContent::Text(
+                                            msg.content,
+                                        ),
+                                    ),
                                     refusal: None,
                                     tool_calls: None,
                                     name: None,
                                     function_call: None,
-                                                                    },
+                                },
                             )
                         }
                     }

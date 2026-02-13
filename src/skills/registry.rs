@@ -43,26 +43,18 @@ impl SkillRegistry {
             .collect()
     }
 
-    pub fn find_matching(&self, query: &str) -> Vec<&Skill> {
-        let query_lower = query.to_lowercase();
-        self.skills
-            .values()
-            .filter(|skill| {
-                skill.metadata.name.to_lowercase().contains(&query_lower)
-                    || skill
-                        .metadata
-                        .description
-                        .to_lowercase()
-                        .contains(&query_lower)
-            })
-            .collect()
-    }
-
     pub fn clear(&mut self) {
         self.skills.clear();
     }
 
     pub fn sources(&self) -> &[SkillSource] {
         &self.sources
+    }
+}
+
+// 修复 clippy 警告：在外层添加 Default trait 实现
+impl Default for SkillRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }

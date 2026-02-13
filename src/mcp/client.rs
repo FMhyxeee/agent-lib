@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use crate::error::{AgentError, AgentResult};
 use crate::mcp::{
-    McpPrompt, McpPromptResult, McpRequest, McpResource, McpResourceContent, McpResponse,
-    McpTool, McpToolCall, McpTransport,
+    McpPrompt, McpPromptResult, McpRequest, McpResource, McpResourceContent, McpResponse, McpTool,
+    McpToolCall, McpTransport,
 };
 
 #[derive(Debug)]

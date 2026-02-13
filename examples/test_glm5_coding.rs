@@ -13,8 +13,8 @@
 //! cargo run --example test_glm5_coding
 //! ```
 
-use agent_lib::model::{Message, MessageRole, ModelClient};
 use agent_lib::model::provider::{GlmCodingPlanProvider, GlmProvider};
+use agent_lib::model::{Message, MessageRole, ModelClient};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,14 +43,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let standard_provider = GlmProvider::new("glm-5", &api_key);
 
-    let messages = vec![
-        Message {
-            role: MessageRole::User,
-            content: "你好,请用一句话介绍Rust语言。".to_string(),
-            tool_call_id: None,
-            tool_calls: None,
-        },
-    ];
+    let messages = vec![Message {
+        role: MessageRole::User,
+        content: "你好,请用一句话介绍Rust语言。".to_string(),
+        tool_call_id: None,
+        tool_calls: None,
+    }];
 
     match standard_provider.chat(messages.clone(), vec![]).await {
         Ok(response) => {
@@ -58,7 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}\n", response.content);
             println!("📊 Token Usage:");
             println!("  - Prompt tokens: {}", response.usage.prompt_tokens);
-            println!("  - Completion tokens: {}", response.usage.completion_tokens);
+            println!(
+                "  - Completion tokens: {}",
+                response.usage.completion_tokens
+            );
             println!("  - Total tokens: {}", response.usage.total_tokens);
         }
         Err(e) => {
@@ -78,7 +79,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}\n", response.content);
             println!("📊 Token Usage:");
             println!("  - Prompt tokens: {}", response.usage.prompt_tokens);
-            println!("  - Completion tokens: {}", response.usage.completion_tokens);
+            println!(
+                "  - Completion tokens: {}",
+                response.usage.completion_tokens
+            );
             println!("  - Total tokens: {}", response.usage.total_tokens);
         }
         Err(e) => {

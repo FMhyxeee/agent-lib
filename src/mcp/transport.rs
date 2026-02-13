@@ -168,10 +168,9 @@ impl McpTransport {
                             .write_all(payload.as_bytes())
                             .await
                             .map_err(|err| AgentError::Mcp(format!("write failed: {err}")))?;
-                        stdin
-                            .write_all(b"\n")
-                            .await
-                            .map_err(|err| AgentError::Mcp(format!("write newline failed: {err}")))?;
+                        stdin.write_all(b"\n").await.map_err(|err| {
+                            AgentError::Mcp(format!("write newline failed: {err}"))
+                        })?;
                         stdin
                             .flush()
                             .await
@@ -201,10 +200,9 @@ impl McpTransport {
                         .write_all(payload.as_bytes())
                         .await
                         .map_err(|err| AgentError::Mcp(format!("tcp write failed: {err}")))?;
-                    stream
-                        .write_all(b"\n")
-                        .await
-                        .map_err(|err| AgentError::Mcp(format!("tcp write newline failed: {err}")))?;
+                    stream.write_all(b"\n").await.map_err(|err| {
+                        AgentError::Mcp(format!("tcp write newline failed: {err}"))
+                    })?;
                     stream
                         .flush()
                         .await

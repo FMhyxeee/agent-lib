@@ -53,7 +53,7 @@ impl SkillLoader {
         while let Some(entry) = entries
             .next_entry()
             .await
-            .map_err(|err| AgentError::InvalidConfig(format!("读取技能目录失败: {err}")))? 
+            .map_err(|err| AgentError::InvalidConfig(format!("读取技能目录失败: {err}")))?
         {
             let path = entry.path();
             if !path.is_dir() {

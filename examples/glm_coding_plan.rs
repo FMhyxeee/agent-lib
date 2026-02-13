@@ -13,8 +13,8 @@
 //! cargo run --example glm_coding_plan
 //! ```
 
-use agent_lib::model::{Message, MessageRole, ModelClient};
 use agent_lib::model::provider::GlmCodingPlanProvider;
+use agent_lib::model::{Message, MessageRole, ModelClient};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,8 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
 
     // Load API key from environment
-    let api_key = std::env::var("GLM_API_KEY")
-        .expect("GLM_API_KEY environment variable not set");
+    let api_key = std::env::var("GLM_API_KEY").expect("GLM_API_KEY environment variable not set");
 
     println!("🚀 GLM Coding Plan Provider Example\n");
 
@@ -33,14 +32,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = GlmCodingPlanProvider::new("glm-4.7", &api_key);
 
-    let messages = vec![
-        Message {
-            role: MessageRole::User,
-            content: "你好!请用一句话介绍Rust编程语言的特点。".to_string(),
-            tool_call_id: None,
-            tool_calls: None,
-        },
-    ];
+    let messages = vec![Message {
+        role: MessageRole::User,
+        content: "你好!请用一句话介绍Rust编程语言的特点。".to_string(),
+        tool_call_id: None,
+        tool_calls: None,
+    }];
 
     match provider.chat(messages, vec![]).await {
         Ok(response) => {
@@ -48,7 +45,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}\n", response.content);
             println!("📊 Token Usage:");
             println!("  - Prompt tokens: {}", response.usage.prompt_tokens);
-            println!("  - Completion tokens: {}", response.usage.completion_tokens);
+            println!(
+                "  - Completion tokens: {}",
+                response.usage.completion_tokens
+            );
             println!("  - Total tokens: {}", response.usage.total_tokens);
         }
         Err(e) => {
@@ -61,14 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = GlmCodingPlanProvider::new("glm-4.7", &api_key);
 
-    let messages = vec![
-        Message {
-            role: MessageRole::User,
-            content: "请写一首关于AI编程的简短诗歌,不超过50字。".to_string(),
-            tool_call_id: None,
-            tool_calls: None,
-        },
-    ];
+    let messages = vec![Message {
+        role: MessageRole::User,
+        content: "请写一首关于AI编程的简短诗歌,不超过50字。".to_string(),
+        tool_call_id: None,
+        tool_calls: None,
+    }];
 
     match provider.chat_stream(messages, vec![]).await {
         Ok(mut stream) => {

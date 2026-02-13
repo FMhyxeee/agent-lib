@@ -1,13 +1,13 @@
 use async_trait::async_trait;
+use serde_json::Value;
 use std::sync::Arc;
 use tracing::{debug, info};
-use serde_json::Value;
 
 use crate::model::{Message, ToolCallMessage};
 use crate::protocol::{Event, TurnAbortReason};
 use crate::session::{TaskSession, TurnContext};
 use crate::tasks::{SessionTask, TaskKind};
-use crate::tools::{truncate_output, needs_truncation};
+use crate::tools::{needs_truncation, truncate_output};
 use tokio_util::sync::CancellationToken;
 
 /// 常规 Turn 任务
@@ -33,6 +33,13 @@ impl SessionTask for RegularTask {
     ) -> Option<String> {
         let turn_id = ctx.sub_id.clone();
         info!("[{}] Starting RegularTask", turn_id);
+
+        // 发送 TurnStarted 事件
+        session
+            .emit_event(Event::TurnStarted {
+                turn_id: turn_id.clone(),
+            })
+            .await;
 
         // 检查是否被取消
         if cancellation_token.is_cancelled() {
@@ -120,15 +127,20 @@ impl SessionTask for RegularTask {
             }
 
             // 调用模型
-            let response = match session.chat_model(current_messages.clone(), tools.clone()).await {
+            let response = match session
+                .chat_model(current_messages.clone(), tools.clone())
+                .await
+            {
                 Ok(resp) => resp,
                 Err(e) => {
                     let error_msg = format!("{:?}", e);
                     debug!("[{}] Model call failed: {}", turn_id, error_msg);
                     session.emit_event(Event::Error { error: e.clone() }).await;
-                    session.emit_event(Event::ModelStreaming {
-                        chunk: format!("[ERROR: {}]\n", error_msg),
-                    }).await;
+                    session
+                        .emit_event(Event::ModelStreaming {
+                            chunk: format!("[ERROR: {}]\n", error_msg),
+                        })
+                        .await;
                     return None;
                 }
             };
@@ -140,7 +152,9 @@ impl SessionTask for RegularTask {
             // 检查是否有工具调用
             if response.tool_calls.is_empty() {
                 // 修复 P0-1: 将助手响应添加到会话历史
-                session.push_message(Message::assistant(response.content.clone())).await;
+                session
+                    .push_message(Message::assistant(response.content.clone()))
+                    .await;
 
                 // 没有工具调用，发送响应内容
                 let chunk_size = 20;
@@ -151,7 +165,9 @@ impl SessionTask for RegularTask {
                         if cancellation_token.is_cancelled() {
                             session
                                 .emit_event(Event::TurnAborted {
-                                    reason: TurnAbortReason::Error("cancelled during response".to_string()),
+                                    reason: TurnAbortReason::Error(
+                                        "cancelled during response".to_string(),
+                                    ),
                                 })
                                 .await;
                             return None;
@@ -215,10 +231,7 @@ impl SessionTask for RegularTask {
                     turn_id, tc.name, tc.arguments
                 );
 
-                match session
-                    .execute_tool(&tc.name, tc.arguments.clone())
-                    .await
-                {
+                match session.execute_tool(&tc.name, tc.arguments.clone()).await {
                     Ok(result) => {
                         // 将结果转换为字符串
                         let mut result_str = match &result.output {
@@ -269,9 +282,7 @@ impl SessionTask for RegularTask {
                         debug!("[{}] Tool {} failed: {}", turn_id, tc.name, error_str);
 
                         // 发送工具错误事件
-                        session
-                            .emit_event(Event::Error { error: e.clone() })
-                            .await;
+                        session.emit_event(Event::Error { error: e.clone() }).await;
 
                         // 创建错误结果消息
                         tool_messages.push(Message::tool_result(&tc.id, error_str));
@@ -302,7 +313,10 @@ impl SessionTask for RegularTask {
                 .await;
         }
 
-        info!("[{}] RegularTask completed ({} tool loops)", turn_id, loop_count);
+        info!(
+            "[{}] RegularTask completed ({} tool loops)",
+            turn_id, loop_count
+        );
         Some(format!(
             "Turn {}: {} tokens processed, response length: {}, tool loops: {}",
             turn_id,

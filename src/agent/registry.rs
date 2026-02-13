@@ -24,11 +24,7 @@ impl AgentRegistry {
         }
     }
 
-    pub async fn register(
-        &self,
-        name: impl Into<String>,
-        receiver: Arc<dyn HandoffReceiver>,
-    ) {
+    pub async fn register(&self, name: impl Into<String>, receiver: Arc<dyn HandoffReceiver>) {
         let mut agents = self.agents.lock().await;
         agents.insert(name.into(), receiver);
     }

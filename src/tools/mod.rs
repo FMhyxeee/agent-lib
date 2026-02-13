@@ -10,4 +10,4 @@ pub use approval::{ApprovalDecision, ApprovalHook};
 pub use definition::{Tool, ToolContext, ToolDef, ToolResult, not_implemented_tool};
 pub use executor::ToolExecutor;
 pub use registry::ToolRegistry;
-pub use truncation::{truncate_output, truncate_json_output, needs_truncation, truncated_size};
+pub use truncation::{needs_truncation, truncate_json_output, truncate_output, truncated_size};

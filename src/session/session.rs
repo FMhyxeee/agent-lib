@@ -215,7 +215,10 @@ impl std::fmt::Debug for SessionConfig {
             .field("mcp_manager", &self.mcp_manager)
             .field("max_undo_steps", &self.max_undo_steps)
             .field("model", &self.model.as_ref().map(|_| "<ModelClient>"))
-            .field("tool_executor", &self.tool_executor.as_ref().map(|_| "<ToolExecutor>"))
+            .field(
+                "tool_executor",
+                &self.tool_executor.as_ref().map(|_| "<ToolExecutor>"),
+            )
             .field("skill_config", &self.skill_config)
             .field(
                 "skill_registry",
@@ -271,7 +274,10 @@ impl std::fmt::Debug for Session {
             .field("active_turn", &self.active_turn)
             .field("undo_stack", &"<UndoStack>")
             .field("model", &self.model.as_ref().map(|_| "<ModelClient>"))
-            .field("tool_executor", &self.tool_executor.as_ref().map(|_| "<ToolExecutor>"))
+            .field(
+                "tool_executor",
+                &self.tool_executor.as_ref().map(|_| "<ToolExecutor>"),
+            )
             .finish()
     }
 }
@@ -346,7 +352,10 @@ impl Session {
         });
 
         // 启动完整的 submission_loop
-        tokio::spawn(crate::tasks::submission_loop(sess_clone, submission_receiver));
+        tokio::spawn(crate::tasks::submission_loop(
+            sess_clone,
+            submission_receiver,
+        ));
 
         (sess_arc, handle)
     }
@@ -354,6 +363,12 @@ impl Session {
     /// 获取对话历史
     pub async fn history(&self) -> ConversationHistory {
         self.history.lock().await.clone()
+    }
+
+    /// 添加消息到历史 (修复 P0-1: 确保写回到会话状态)
+    pub async fn push_message(&self, message: crate::model::Message) {
+        let mut history = self.history.lock().await;
+        history.push(message);
     }
 
     /// 高效的 token 访问，避免完整克隆

@@ -9,7 +9,9 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::{AgentError, AgentResult};
-use crate::model::{Message, MessageRole, ModelClient, ModelResponse, StreamChunk, ToolCall, TokenUsage};
+use crate::model::{
+    Message, MessageRole, ModelClient, ModelResponse, StreamChunk, TokenUsage, ToolCall,
+};
 use crate::tools::ToolDef;
 
 #[derive(Debug, Clone)]

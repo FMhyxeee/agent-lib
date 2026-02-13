@@ -132,11 +132,17 @@ pub async fn submission_loop(sess: Arc<Session>, mut rx_sub: mpsc::Receiver<Subm
                 handle_run_user_shell_command(&sess, command).await;
             }
 
-            Op::ApprovalResponse { request_id, approved } => {
+            Op::ApprovalResponse {
+                request_id,
+                approved,
+            } => {
                 handle_approval_response(&sess, request_id, approved).await;
             }
 
-            Op::Handoff { target_agent, context } => {
+            Op::Handoff {
+                target_agent,
+                context,
+            } => {
                 handle_handoff(&sess, target_agent, context).await;
             }
 
@@ -161,7 +167,10 @@ pub async fn submission_loop(sess: Arc<Session>, mut rx_sub: mpsc::Receiver<Subm
             Op::ApplySkill { name } => {
                 handle_apply_skill(&sess, name).await;
             }
-            Op::ReadSkillFile { skill_name, file_path } => {
+            Op::ReadSkillFile {
+                skill_name,
+                file_path,
+            } => {
                 handle_read_skill_file(&sess, skill_name, file_path).await;
             }
 
@@ -195,6 +204,12 @@ pub async fn submission_loop(sess: Arc<Session>, mut rx_sub: mpsc::Receiver<Subm
 async fn handle_interrupt(sess: &Session) {
     debug!("Handling interrupt");
     sess.abort_all_tasks().await;
+
+    // 发送中断错误事件
+    sess.emit_event(crate::protocol::Event::Error {
+        error: crate::error::AgentError::Session("Interrupted by user".to_string()),
+    })
+    .await;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -329,9 +344,9 @@ async fn handle_user_input_or_turn(
             for item in items {
                 match item {
                     crate::protocol::UserInputItem::Text { text } => {
-                        // 添加到历史
-                        let mut history = sess.history().await;
-                        history.push(crate::model::Message::user(text.clone()));
+                        // 修复 P0-1: 使用 push_message 直接写回历史
+                        sess.push_message(crate::model::Message::user(text.clone()))
+                            .await;
                         has_text_input = true;
                     }
                     crate::protocol::UserInputItem::Image { path } => {
@@ -376,8 +391,8 @@ async fn handle_user_input_or_turn(
             let mut has_text_input = false;
             for item in items {
                 if let crate::protocol::UserInputItem::Text { text } = item {
-                    let mut history = sess.history().await;
-                    history.push(crate::model::Message::user(text));
+                    // 修复 P0-1: 使用 push_message 直接写回历史
+                    sess.push_message(crate::model::Message::user(text)).await;
                     has_text_input = true;
                 }
             }
@@ -499,7 +514,10 @@ async fn handle_refresh_mcp_servers(sess: &Session, config: McpServerRefreshConf
             .await;
         } else {
             // 检查并刷新不健康的连接
-            debug!("Checking {} MCP servers for unhealthy connections", servers.len());
+            debug!(
+                "Checking {} MCP servers for unhealthy connections",
+                servers.len()
+            );
             sess.emit_event(crate::protocol::Event::Warning {
                 message: format!(
                     "Checked {} MCP servers, all connections healthy",
@@ -596,9 +614,11 @@ async fn handle_thread_rollback(sess: &Session, num_turns: u32) {
 async fn handle_add_to_history(sess: &Session, text: String) {
     debug!("Handling add to history: {}", text);
 
-    let mut history = sess.history().await;
-    history.push(crate::model::Message::user(text.clone()));
+    // 修复 P0-1: 使用 push_message 直接写回历史
+    sess.push_message(crate::model::Message::user(text.clone()))
+        .await;
 
+    let history = sess.history().await;
     sess.emit_event(crate::protocol::Event::HistoryEntry {
         offset: history.len() - 1,
         log_id: 0,
@@ -610,7 +630,7 @@ async fn handle_add_to_history(sess: &Session, text: String) {
 /// 处理用户 Shell 命令执行
 async fn handle_run_user_shell_command(sess: &Session, command: String) {
     use tokio::process::Command;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     debug!(command = %command, "Handling run user shell command");
 
@@ -630,14 +650,9 @@ async fn handle_run_user_shell_command(sess: &Session, command: String) {
     let result = match timeout(
         Duration::from_secs(30),
         if cfg!(windows) {
-            Command::new("cmd")
-                .args(["/C", &command])
-                .output()
+            Command::new("cmd").args(["/C", &command]).output()
         } else {
-            Command::new("sh")
-                .arg("-c")
-                .arg(&command)
-                .output()
+            Command::new("sh").arg("-c").arg(&command).output()
         },
     )
     .await
@@ -675,17 +690,12 @@ async fn handle_run_user_shell_command(sess: &Session, command: String) {
     if exit_code == 0 {
         // 成功 - 发送输出
         if !stdout.is_empty() {
-            sess.emit_event(crate::protocol::Event::ModelStreaming {
-                chunk: stdout,
-            })
-            .await;
+            sess.emit_event(crate::protocol::Event::ModelStreaming { chunk: stdout })
+                .await;
         }
         sess.emit_event(crate::protocol::Event::ToolCallResult {
             tool: "shell".to_string(),
-            result: crate::tools::ToolResult::text(format!(
-                "Exit code: {}",
-                exit_code
-            )),
+            result: crate::tools::ToolResult::text(format!("Exit code: {}", exit_code)),
         })
         .await;
     } else {
@@ -709,18 +719,32 @@ fn is_command_allowed(command: &str) -> bool {
     // === 黑名单：危险命令 ===
     let blocklist = [
         // 系统破坏
-        "rm -rf /", "rm -rf /*", "rm -rf ~",
-        "format", "mkfs",
-        "dd if=/dev/zero", "dd if=/dev/random",
+        "rm -rf /",
+        "rm -rf /*",
+        "rm -rf ~",
+        "format",
+        "mkfs",
+        "dd if=/dev/zero",
+        "dd if=/dev/random",
         // 系统控制
-        "shutdown", "reboot", "halt", "poweroff", "init 0",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+        "init 0",
         // Windows 危险命令
-        "format c:", "del /q", "rmdir /s /q c:\\",
-        "shutdown /s", "shutdown /r",
+        "format c:",
+        "del /q",
+        "rmdir /s /q c:\\",
+        "shutdown /s",
+        "shutdown /r",
         // 密码/密钥相关
-        "passwd", "chpasswd",
+        "passwd",
+        "chpasswd",
         // 数据库删除
-        "drop database", "truncate table", "delete from",
+        "drop database",
+        "truncate table",
+        "delete from",
     ];
 
     for blocked in blocklist {
@@ -767,11 +791,11 @@ fn is_command_allowed(command: &str) -> bool {
         // 文件操作（限制范围）
         ("mkdir", true),
         ("touch", true),
-        ("cp ", true),  // 注意空格，避免匹配到其他命令
+        ("cp ", true), // 注意空格，避免匹配到其他命令
         ("mv ", true),
         ("copy ", true),
         ("move ", true),
-        ("rm ", true),  // 允许 rm 但不是 rm -rf /
+        ("rm ", true), // 允许 rm 但不是 rm -rf /
         ("del ", true),
     ];
 
@@ -800,18 +824,12 @@ async fn handle_approval_response(sess: &Session, request_id: String, approved: 
     if approved {
         sess.emit_event(crate::protocol::Event::ToolCallResult {
             tool: request_id.clone(),
-            result: crate::tools::ToolResult::text(format!(
-                "Request {} approved",
-                request_id
-            )),
+            result: crate::tools::ToolResult::text(format!("Request {} approved", request_id)),
         })
         .await;
     } else {
         sess.emit_event(crate::protocol::Event::Error {
-            error: crate::error::AgentError::Tool(format!(
-                "Request {} denied by user",
-                request_id
-            )),
+            error: crate::error::AgentError::Tool(format!("Request {} denied by user", request_id)),
         })
         .await;
     }
@@ -823,8 +841,7 @@ async fn handle_handoff(sess: &Session, target_agent: String, context: serde_jso
 
     // 获取当前状态
     let current_state = sess.history().await;
-    let state_json = serde_json::to_value(&current_state)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let state_json = serde_json::to_value(&current_state).unwrap_or_else(|_| serde_json::json!({}));
 
     // 构建移交上下文
     let handoff_context = serde_json::json!({
@@ -901,20 +918,24 @@ async fn handle_user_input_answer(
 }
 
 /// 处理代码审查请求
-async fn handle_review(
-    sess: &Session,
-    review_request: crate::protocol::ReviewRequest,
-) {
-    debug!(content_len = review_request.content.len(), "Handling review request");
+async fn handle_review(sess: &Session, review_request: crate::protocol::ReviewRequest) {
+    debug!(
+        content_len = review_request.content.len(),
+        "Handling review request"
+    );
 
     // 发送审查开始事件
     sess.emit_event(crate::protocol::Event::Warning {
-        message: format!("Code review started: {} chars", review_request.content.len()),
+        message: format!(
+            "Code review started: {} chars",
+            review_request.content.len()
+        ),
     })
     .await;
 
     // 执行代码审查
-    let review_result = perform_code_review(&review_request.content, review_request.context.as_deref());
+    let review_result =
+        perform_code_review(&review_request.content, review_request.context.as_deref());
 
     // 发送审查结果
     sess.emit_event(crate::protocol::Event::ToolCallResult {
@@ -936,7 +957,8 @@ fn perform_code_review(content: &str, context: Option<&str>) -> String {
 
     if content.contains("unwrap()") && !content.contains("unwrap_or") {
         issues.push(
-            "Found unwrap() calls that may panic - consider using unwrap_or() or ? operator".to_string(),
+            "Found unwrap() calls that may panic - consider using unwrap_or() or ? operator"
+                .to_string(),
         );
     }
 
@@ -945,9 +967,8 @@ fn perform_code_review(content: &str, context: Option<&str>) -> String {
     }
 
     if content.contains("println!") {
-        suggestions.push(
-            "Found println! macros - consider using a proper logging library".to_string(),
-        );
+        suggestions
+            .push("Found println! macros - consider using a proper logging library".to_string());
     }
 
     // 2. 检查代码长度
@@ -1001,12 +1022,12 @@ fn perform_code_review(content: &str, context: Option<&str>) -> String {
 }
 
 /// 处理历史条目请求
-async fn handle_get_history_entry_request(
-    sess: &Session,
-    offset: usize,
-    log_id: u64,
-) {
-    debug!(offset = offset, log_id = log_id, "Handling get history entry request");
+async fn handle_get_history_entry_request(sess: &Session, offset: usize, log_id: u64) {
+    debug!(
+        offset = offset,
+        log_id = log_id,
+        "Handling get history entry request"
+    );
 
     let history = sess.history().await;
     let entries = history.all();
@@ -1016,9 +1037,7 @@ async fn handle_get_history_entry_request(
         sess.emit_event(crate::protocol::Event::HistoryEntry {
             offset,
             log_id,
-            entry: serde_json::to_string(entry).unwrap_or_else(|_| {
-                format!("{:?}", entry)
-            }),
+            entry: serde_json::to_string(entry).unwrap_or_else(|_| format!("{:?}", entry)),
         })
         .await;
     } else {
@@ -1033,11 +1052,7 @@ async fn handle_get_history_entry_request(
 }
 
 /// 处理列出技能请求
-async fn handle_list_skills(
-    sess: &Session,
-    cwds: Vec<std::path::PathBuf>,
-    force_reload: bool,
-) {
+async fn handle_list_skills(sess: &Session, cwds: Vec<std::path::PathBuf>, force_reload: bool) {
     debug!(cwds = ?cwds, force_reload = force_reload, "Handling list skills");
 
     let skills = match load_skills_for_request(sess, &cwds).await {
@@ -1205,7 +1220,10 @@ async fn handle_read_skill_file(sess: &Session, skill_name: String, file_path: S
     .await;
 }
 
-async fn load_skill_by_name(sess: &Session, name: &str) -> crate::error::AgentResult<Option<Skill>> {
+async fn load_skill_by_name(
+    sess: &Session,
+    name: &str,
+) -> crate::error::AgentResult<Option<Skill>> {
     if let Some(registry) = sess.get_skill_registry() {
         if let Some(skill) = registry.get(name) {
             return Ok(Some(skill.clone()));
@@ -1318,14 +1336,14 @@ async fn handle_list_custom_prompts(sess: &Session) {
         description: "Generate comprehensive documentation for code".to_string(),
     });
 
-    sess.emit_event(crate::protocol::Event::ListCustomPromptsResponse {
-        prompts,
-    })
-    .await;
+    sess.emit_event(crate::protocol::Event::ListCustomPromptsResponse { prompts })
+        .await;
 }
 
 /// 扫描提示目录
-async fn scan_prompts_directory(dir: &std::path::Path) -> std::io::Result<Vec<crate::protocol::CustomPromptInfo>> {
+async fn scan_prompts_directory(
+    dir: &std::path::Path,
+) -> std::io::Result<Vec<crate::protocol::CustomPromptInfo>> {
     let mut prompts = Vec::new();
 
     if !dir.exists() {
@@ -1337,7 +1355,8 @@ async fn scan_prompts_directory(dir: &std::path::Path) -> std::io::Result<Vec<cr
         let path = entry.path();
 
         // 支持的提示文件扩展名
-        let is_prompt_file = path.extension()
+        let is_prompt_file = path
+            .extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| matches!(ext, "md" | "txt" | "prompt"))
             .unwrap_or(false);
@@ -1361,10 +1380,7 @@ async fn scan_prompts_directory(dir: &std::path::Path) -> std::io::Result<Vec<cr
                 "Custom prompt file".to_string()
             };
 
-            prompts.push(crate::protocol::CustomPromptInfo {
-                name,
-                description,
-            });
+            prompts.push(crate::protocol::CustomPromptInfo { name, description });
         }
     }
 
@@ -1409,10 +1425,8 @@ async fn handle_start_turn(sess: &Session, prompt: String) {
 async fn handle_user_input(sess: &Session, content: String) {
     debug!(content = %content, "Handling user input");
 
-    sess.emit_event(crate::protocol::Event::ModelStreaming {
-        chunk: content,
-    })
-    .await;
+    sess.emit_event(crate::protocol::Event::ModelStreaming { chunk: content })
+        .await;
 }
 
 // === MCP Resources 和 Prompts 处理器 ===
@@ -1464,19 +1478,14 @@ async fn handle_read_mcp_resource(sess: &Session, uri: String) {
 
     let Some(manager) = sess.get_mcp_manager() else {
         sess.emit_event(crate::protocol::Event::Error {
-            error: crate::error::AgentError::Tool(
-                "No MCP manager configured".to_string(),
-            ),
+            error: crate::error::AgentError::Tool("No MCP manager configured".to_string()),
         })
         .await;
         return;
     };
 
     // 从 URI 提取服务器名称 (格式: server_name:/path/to/resource)
-    let server_name = uri
-        .split_once(':')
-        .map(|(s, _)| s)
-        .unwrap_or("default");
+    let server_name = uri.split_once(':').map(|(s, _)| s).unwrap_or("default");
 
     if let Some((client, _tools)) = manager.get_server_info(server_name).await {
         match client.read_resource(uri.clone()).await {
@@ -1557,18 +1566,12 @@ async fn handle_list_mcp_prompts(sess: &Session) {
 }
 
 /// 处理获取 MCP 提示
-async fn handle_get_mcp_prompt(
-    sess: &Session,
-    name: String,
-    arguments: Option<serde_json::Value>,
-) {
+async fn handle_get_mcp_prompt(sess: &Session, name: String, arguments: Option<serde_json::Value>) {
     debug!(name = %name, "Handling get MCP prompt");
 
     let Some(manager) = sess.get_mcp_manager() else {
         sess.emit_event(crate::protocol::Event::Error {
-            error: crate::error::AgentError::Tool(
-                "No MCP manager configured".to_string(),
-            ),
+            error: crate::error::AgentError::Tool("No MCP manager configured".to_string()),
         })
         .await;
         return;
@@ -1578,10 +1581,7 @@ async fn handle_get_mcp_prompt(
     let (server_name, prompt_name) = name.split_once(':').unwrap_or(("default", name.as_str()));
 
     if let Some((client, _tools)) = manager.get_server_info(server_name).await {
-        match client
-            .get_prompt(prompt_name.to_string(), arguments)
-            .await
-        {
+        match client.get_prompt(prompt_name.to_string(), arguments).await {
             Ok(result) => {
                 let messages = result
                     .messages

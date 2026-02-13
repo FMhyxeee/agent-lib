@@ -52,8 +52,14 @@ pub fn truncate_output(output: &str, max_size: usize) -> String {
     let head: String = output.chars().take(head_size).collect();
 
     // 收集结尾的字符
-    let tail: String = output.chars().rev().take(tail_size).collect::<String>()
-        .chars().rev().collect();
+    let tail: String = output
+        .chars()
+        .rev()
+        .take(tail_size)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
 
     format!("{}{}{}", head, TRUNCATION_MARKER, tail)
 }
@@ -71,8 +77,7 @@ pub fn truncate_output(output: &str, max_size: usize) -> String {
 /// # 返回
 /// 截断后的 JSON 字符串
 pub fn truncate_json_output(output: &Value, max_size: usize) -> String {
-    let json_str = serde_json::to_string_pretty(output)
-        .unwrap_or_else(|_| format!("{:?}", output));
+    let json_str = serde_json::to_string_pretty(output).unwrap_or_else(|_| format!("{:?}", output));
 
     let json_len = json_str.chars().count();
 
