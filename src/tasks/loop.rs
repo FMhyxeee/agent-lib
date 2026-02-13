@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
+use crate::model::MessageRole;
 use crate::protocol::{
     ApprovalPolicy, CollaborationMode, Event, McpServerRefreshConfig, Op, ReasoningEffort,
     ReasoningSummary, ReviewDecision, SandboxPolicy,
@@ -51,19 +52,20 @@ pub async fn submission_loop(sess: Arc<Session>, mut rx_sub: mpsc::Receiver<Subm
                 summary,
                 collaboration_mode,
             } => {
-                handle_override_turn_context(
-                    &sess,
-                    sub.id,
-                    cwd,
-                    approval_policy,
-                    sandbox_policy,
-                    model,
-                    effort,
-                    summary,
-                    collaboration_mode,
-                )
-                .await;
-                previous_context = Some(sess.new_default_turn().await);
+                previous_context = Some(
+                    handle_override_turn_context(
+                        &sess,
+                        sub.id,
+                        cwd,
+                        approval_policy,
+                        sandbox_policy,
+                        model,
+                        effort,
+                        summary,
+                        collaboration_mode,
+                    )
+                    .await,
+                );
             }
 
             Op::UserTurn { .. } | Op::UserInputLegacy { .. } => {
@@ -223,7 +225,7 @@ async fn handle_override_turn_context(
     effort: Option<Option<ReasoningEffort>>,
     summary: Option<ReasoningSummary>,
     collaboration_mode: Option<CollaborationMode>,
-) {
+) -> Arc<TurnContext> {
     debug!("Handling override turn context");
 
     // 创建新的上下文，基于默认配置但覆盖指定的字段
@@ -275,6 +277,8 @@ async fn handle_override_turn_context(
         ),
     })
     .await;
+
+    Arc::new(new_ctx)
 }
 
 async fn handle_user_input_or_turn(
@@ -534,12 +538,46 @@ async fn handle_refresh_mcp_servers(sess: &Session, config: McpServerRefreshConf
     }
 }
 
+fn count_messages_to_remove_for_undo(messages: &[crate::model::Message]) -> usize {
+    for (i, msg) in messages.iter().rev().enumerate() {
+        if matches!(msg.role, MessageRole::User | MessageRole::Assistant) {
+            if msg.role == MessageRole::Assistant && i < messages.len() - 1 {
+                let prev_msg = &messages[messages.len() - i - 2];
+                if prev_msg.role == MessageRole::User {
+                    return i + 2;
+                }
+            }
+            return i + 1;
+        }
+    }
+    0
+}
+
+fn count_messages_to_remove_for_rollback(
+    messages: &[crate::model::Message],
+    num_turns: u32,
+) -> usize {
+    if messages.is_empty() {
+        return 0;
+    }
+
+    let mut user_turns_seen = 0_u32;
+    for (idx, msg) in messages.iter().enumerate().rev() {
+        if msg.role == MessageRole::User {
+            user_turns_seen += 1;
+            if user_turns_seen == num_turns {
+                return messages.len() - idx;
+            }
+        }
+    }
+
+    messages.len()
+}
+
 async fn handle_undo(sess: &Session) {
     debug!("Handling undo");
 
-    let current_len = sess.history().await.len();
-
-    if current_len == 0 {
+    if sess.history().await.is_empty() {
         sess.emit_event(crate::protocol::Event::Warning {
             message: "Cannot undo: history is empty".to_string(),
         })
@@ -547,46 +585,25 @@ async fn handle_undo(sess: &Session) {
         return;
     }
 
-    // 使用 with_history 来分析需要移除的消息
     let messages_to_remove = sess
-        .with_history(|history| {
-            let messages = history.all();
-
-            // 找到最后一个用户输入或助手消息
-            for (i, msg) in messages.iter().rev().enumerate() {
-                if matches!(
-                    msg.role,
-                    crate::model::MessageRole::User | crate::model::MessageRole::Assistant
-                ) {
-                    // 如果是助手消息，我们需要确保移除完整的一轮
-                    // 即助手消息前的用户消息（如果存在）
-                    if msg.role == crate::model::MessageRole::Assistant && i < messages.len() - 1 {
-                        let prev_msg = &messages[messages.len() - i - 2];
-                        if prev_msg.role == crate::model::MessageRole::User {
-                            return i + 2; // 用户 + 助手
-                        }
-                    }
-                    return i + 1; // 只移除这一个消息
-                }
-            }
-            0 // 没有找到需要移除的消息
-        })
+        .with_history(|history| count_messages_to_remove_for_undo(history.all()))
         .await;
 
     if messages_to_remove > 0 {
-        // 使用 compact_history 方法来实现撤销功能
-        // 保留所有消息除了最后 messages_to_remove 条
-        let keep_recent = current_len - messages_to_remove;
-        let summary = format!("Undo: removed {} messages", messages_to_remove);
-
-        // 调用 compact_history 方法
-        sess.compact_history(keep_recent, summary.clone()).await;
-
-        sess.emit_event(crate::protocol::Event::UndoPerformed {
-            removed_messages: messages_to_remove,
-            summary,
-        })
-        .await;
+        let removed_messages = sess.remove_last_messages(messages_to_remove).await;
+        if removed_messages > 0 {
+            let summary = format!("Undo: removed {} messages", removed_messages);
+            sess.emit_event(crate::protocol::Event::UndoPerformed {
+                removed_messages,
+                summary,
+            })
+            .await;
+        } else {
+            sess.emit_event(crate::protocol::Event::Warning {
+                message: "Cannot undo: no removable messages found".to_string(),
+            })
+            .await;
+        }
     } else {
         sess.emit_event(crate::protocol::Event::Warning {
             message: "Cannot undo: no user or assistant messages to remove".to_string(),
@@ -598,14 +615,17 @@ async fn handle_undo(sess: &Session) {
 async fn handle_thread_rollback(sess: &Session, num_turns: u32) {
     debug!(num_turns, "Handling thread rollback");
 
-    // 计算要保留的消息数量
-    let history = sess.history().await;
-    let current_len = history.len();
-    let keep_recent = current_len.saturating_sub(num_turns as usize);
+    if num_turns == 0 {
+        sess.emit_event(crate::protocol::Event::ThreadRolledBack { num_turns })
+            .await;
+        return;
+    }
 
-    // 使用现有的 compact 机制
-    let summary = format!("Rolled back {} turns", num_turns);
-    sess.compact_history(keep_recent, summary).await;
+    let messages_to_remove = sess
+        .with_history(|history| count_messages_to_remove_for_rollback(history.all(), num_turns))
+        .await;
+
+    let _ = sess.remove_last_messages(messages_to_remove).await;
 
     sess.emit_event(crate::protocol::Event::ThreadRolledBack { num_turns })
         .await;
@@ -758,59 +778,58 @@ fn is_command_allowed(command: &str) -> bool {
     // 这些命令模式是明确允许的
     let allowlist_patterns = [
         // 信息查看
-        ("ls", true),
-        ("dir", true),
-        ("cat", true),
-        ("type", true),
-        ("head", true),
-        ("tail", true),
-        ("grep", true),
-        ("findstr", true),
-        ("echo", true),
-        ("pwd", true),
-        ("cd", true),
-        ("which", true),
-        ("where", true),
+        "ls",
+        "dir",
+        "cat",
+        "type",
+        "head",
+        "tail",
+        "grep",
+        "findstr",
+        "echo",
+        "pwd",
+        "cd",
+        "which",
+        "where",
         // Git 操作
-        ("git status", true),
-        ("git log", true),
-        ("git diff", true),
-        ("git show", true),
-        ("git branch", true),
+        "git status",
+        "git log",
+        "git diff",
+        "git show",
+        "git branch",
         // 构建工具
-        ("cargo build", true),
-        ("cargo test", true),
-        ("cargo check", true),
-        ("cargo fmt", true),
-        ("cargo clippy", true),
-        ("npm run", true),
-        ("npm test", true),
-        ("npm build", true),
-        ("make", true),
-        ("cmake", true),
+        "cargo build",
+        "cargo test",
+        "cargo check",
+        "cargo fmt",
+        "cargo clippy",
+        "npm run",
+        "npm test",
+        "npm build",
+        "make",
+        "cmake",
         // 文件操作（限制范围）
-        ("mkdir", true),
-        ("touch", true),
-        ("cp ", true), // 注意空格，避免匹配到其他命令
-        ("mv ", true),
-        ("copy ", true),
-        ("move ", true),
-        ("rm ", true), // 允许 rm 但不是 rm -rf /
-        ("del ", true),
+        "mkdir",
+        "touch",
+        "cp ", // 注意空格，避免匹配到其他命令
+        "mv ",
+        "copy ",
+        "move ",
+        "rm ", // 允许 rm 但不是 rm -rf /
+        "del ",
     ];
 
     // 检查是否在白名单中
-    for (pattern, _safe) in &allowlist_patterns {
+    for pattern in &allowlist_patterns {
         if command_lower.starts_with(pattern) {
             debug!(command = %command, "Command allowed by allowlist");
             return true;
         }
     }
 
-    // 默认策略：对于不在白名单中的命令，仍然允许但记录警告
-    // 这样不会意外阻止合法命令
-    debug!(command = %command, "Command not in allowlist, allowing by default");
-    true
+    // 默认策略：不在白名单中的命令一律拒绝
+    debug!(command = %command, "Command not in allowlist, rejecting by default");
+    false
 }
 
 /// 处理批准响应

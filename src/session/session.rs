@@ -91,6 +91,14 @@ struct SessionArc {
     tool_executor: Option<Arc<ToolExecutor>>,
 }
 
+async fn emit_context_compacted(event_sender: &mpsc::Sender<Event>) {
+    let _ = event_sender
+        .send(crate::protocol::Event::ContextCompacted {
+            compacted_items: vec![],
+        })
+        .await;
+}
+
 #[async_trait::async_trait]
 impl TaskSession for SessionArc {
     async fn history(&self) -> ConversationHistory {
@@ -101,12 +109,7 @@ impl TaskSession for SessionArc {
         let mut history = self.history.lock().await;
         history.compact(keep_recent, summary);
 
-        let _ = self
-            .event_sender
-            .send(crate::protocol::Event::ContextCompacted {
-                compacted_items: vec![],
-            })
-            .await;
+        emit_context_compacted(&self.event_sender).await;
     }
 
     async fn push_message(&self, message: Message) {
@@ -122,21 +125,7 @@ impl TaskSession for SessionArc {
     /// 撤销最后几条消息
     async fn undo_last_messages(&self, num_messages: usize) {
         let mut history = self.history.lock().await;
-        if num_messages > 0 && history.len() > num_messages {
-            // 创建新的历史记录，移除最后 num_messages 条消息
-            let new_messages: Vec<crate::model::Message> = history
-                .all()
-                .iter()
-                .take(history.len() - num_messages)
-                .cloned()
-                .collect();
-
-            // 清空历史并重新添加消息
-            history.clear();
-            for msg in new_messages {
-                history.push(msg);
-            }
-        }
+        let _ = history.remove_last_messages(num_messages);
     }
 
     /// 调用模型
@@ -302,7 +291,11 @@ impl Session {
         Self::with_config(buffer, SessionConfig::default())
     }
 
-    pub fn with_config(_buffer: usize, config: SessionConfig) -> (Arc<Self>, SessionHandle) {
+    pub fn with_config(buffer: usize, mut config: SessionConfig) -> (Arc<Self>, SessionHandle) {
+        if buffer > 0 {
+            config.queue_buffer = buffer;
+        }
+
         let (op_sender, mut op_receiver) = mpsc::channel(config.queue_buffer);
         let submission = SubmissionQueue::new(op_sender);
 
@@ -435,6 +428,7 @@ impl Session {
             cancellation_token.clone(),
             Arc::clone(&turn_context),
         );
+        let task_done = running_task.done.clone();
 
         // 添加到活动任务列表
         {
@@ -459,14 +453,21 @@ impl Session {
             let ctx = Arc::clone(&turn_context);
             let token = cancellation_token.clone();
             let active_turn = Arc::clone(&self.active_turn);
+            let done_marker = Arc::clone(&task_done);
             async move {
                 let result = task.run(session_arc, ctx, token).await;
+                done_marker.notify_waiters();
 
                 // 标记任务完成
                 {
                     let mut active = active_turn.lock().await;
+                    let mut should_clear_active_turn = false;
                     if let Some(ref mut turn) = *active {
-                        turn.tasks.retain(|t| !t.cancellation_token.is_cancelled());
+                        turn.tasks.retain(|t| !Arc::ptr_eq(&t.done, &done_marker));
+                        should_clear_active_turn = turn.tasks.is_empty();
+                    }
+                    if should_clear_active_turn {
+                        *active = None;
                     }
                 }
 
@@ -492,12 +493,12 @@ impl Session {
         let mut history = self.history.lock().await;
         history.compact(keep_recent, summary);
 
-        let _ = self
-            .event_sender
-            .send(crate::protocol::Event::ContextCompacted {
-                compacted_items: vec![],
-            })
-            .await;
+        emit_context_compacted(&self.event_sender).await;
+    }
+
+    pub async fn remove_last_messages(&self, num_messages: usize) -> usize {
+        let mut history = self.history.lock().await;
+        history.remove_last_messages(num_messages)
     }
 
     /// 发送事件

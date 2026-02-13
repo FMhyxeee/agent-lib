@@ -180,6 +180,21 @@ impl ConversationHistory {
         self.cache_dirty.set(false);
     }
 
+    /// 删除末尾 `count` 条消息，返回实际删除数量。
+    ///
+    /// 仅移除原始消息，不影响已生成的压缩摘要。
+    pub fn remove_last_messages(&mut self, count: usize) -> usize {
+        if count == 0 || self.messages.is_empty() {
+            return 0;
+        }
+
+        let remove_count = count.min(self.messages.len());
+        let new_len = self.messages.len() - remove_count;
+        self.messages.truncate(new_len);
+        self.cache_dirty.set(true);
+        remove_count
+    }
+
     /// 手动标记缓存失效
     ///
     /// 强制下一次调用 `total_tokens()` 时重新计算所有 token 数量。
@@ -379,5 +394,29 @@ mod tests {
         history.invalidate_cache();
         assert_eq!(history.cached_tokens(), expected);
         assert!(!history.is_cache_valid());
+    }
+
+    #[test]
+    fn test_remove_last_messages() {
+        let mut history = ConversationHistory::new();
+
+        for i in 0..6 {
+            history.push(Message::user(format!("Message {}", i)));
+        }
+
+        history.compact(3, "Summary".to_string());
+        assert_eq!(history.len(), 3);
+        assert_eq!(history.summaries().len(), 1);
+
+        let removed = history.remove_last_messages(2);
+        assert_eq!(removed, 2);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.summaries().len(), 1);
+        assert!(!history.is_cache_valid());
+
+        let removed = history.remove_last_messages(10);
+        assert_eq!(removed, 1);
+        assert_eq!(history.len(), 0);
+        assert_eq!(history.summaries().len(), 1);
     }
 }
