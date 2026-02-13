@@ -14,7 +14,8 @@
       "Bash(dir:*)",
       "Bash(set:*)",
       "Bash(cmd:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(rustfmt:*)"
     ]
   }
 }

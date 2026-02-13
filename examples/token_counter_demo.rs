@@ -2,7 +2,7 @@
 //!
 //! 演示精确的 tiktoken token 计数功能
 
-use agent_lib::token::{count_tokens, TokenCounter};
+use agent_lib::token::{TokenCounter, count_tokens};
 
 fn main() {
     let texts = [
@@ -48,5 +48,8 @@ fn main() {
     println!("  Bytes: {}", byte_count);
     println!("  Estimated: {} tokens", estimated);
     println!("  Actual: {} tokens", actual);
-    println!("  Error: {:.1}%", (estimated.abs_diff(actual) as f64 / actual as f64) * 100.0);
+    println!(
+        "  Error: {:.1}%",
+        (estimated.abs_diff(actual) as f64 / actual as f64) * 100.0
+    );
 }

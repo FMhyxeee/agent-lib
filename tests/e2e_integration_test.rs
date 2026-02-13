@@ -12,11 +12,11 @@
 
 use agent_lib::model::provider::GlmProvider;
 use agent_lib::protocol::{
-    ApprovalPolicy, CollaborationMode, Event, Op, ReasoningEffort,
-    ReasoningSummary, SandboxPolicy, UserInputItem,
+    ApprovalPolicy, CollaborationMode, Event, Op, ReasoningEffort, ReasoningSummary, SandboxPolicy,
+    UserInputItem,
 };
 use agent_lib::session::Session;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 /// 从 .env 文件读取环境变量
 fn read_env_var(file: &str, key: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -35,15 +35,16 @@ fn read_env_var(file: &str, key: &str) -> Result<String, Box<dyn std::error::Err
 async fn e2e_code_review_assistant_scenario() {
     // === Setup ===
     let api_key = read_env_var(".env", "GLM_API_KEY").expect("GLM_API_KEY required");
-    let base_url = read_env_var(".env", "GLM_BASE_URL").unwrap_or_else(|_| {
-        "https://open.bigmodel.cn/api/paas/v4/chat/completions".to_string()
-    });
+    let base_url = read_env_var(".env", "GLM_BASE_URL")
+        .unwrap_or_else(|_| "https://open.bigmodel.cn/api/paas/v4/chat/completions".to_string());
 
     let provider = GlmProvider::new("glm-4.7-flashx", api_key).with_base_url(base_url);
     let (_session, handle) = Session::with_config(
         64,
         agent_lib::session::SessionConfig {
-            model: Some(std::sync::Arc::new(provider) as std::sync::Arc<dyn agent_lib::model::ModelClient>),
+            model: Some(
+                std::sync::Arc::new(provider) as std::sync::Arc<dyn agent_lib::model::ModelClient>
+            ),
             ..Default::default()
         },
     );
@@ -54,9 +55,7 @@ async fn e2e_code_review_assistant_scenario() {
     println!("📝 Turn 1: 用户提交代码审查请求");
     handle
         .submit(Op::UserTurn {
-            items: vec![UserInputItem::text(
-                "你好！请用一句话介绍一下你自己。"
-            )],
+            items: vec![UserInputItem::text("你好！请用一句话介绍一下你自己。")],
             cwd: std::path::PathBuf::from("."),
             approval_policy: ApprovalPolicy::NeverAsk,
             sandbox_policy: SandboxPolicy::Persistent,
@@ -77,7 +76,10 @@ async fn e2e_code_review_assistant_scenario() {
         .await
         .expect("Timeout waiting for TurnStarted")
         .expect("No event received");
-    assert!(matches!(event, Event::TurnStarted { .. }), "First event should be TurnStarted");
+    assert!(
+        matches!(event, Event::TurnStarted { .. }),
+        "First event should be TurnStarted"
+    );
     println!("  ✅ TurnStarted 事件接收");
 
     // 验证 ModelStreaming 事件
@@ -107,7 +109,10 @@ async fn e2e_code_review_assistant_scenario() {
     }
 
     assert!(has_complete, "Should receive ModelComplete event");
-    assert!(!review_content.is_empty(), "Response content should not be empty");
+    assert!(
+        !review_content.is_empty(),
+        "Response content should not be empty"
+    );
     println!("  ✅ ModelStreaming + ModelComplete 事件接收");
     println!("  📄 响应内容长度: {} 字符", review_content.chars().count());
 
@@ -143,7 +148,10 @@ async fn e2e_code_review_assistant_scenario() {
         }
     }
 
-    assert!(has_command_event, "Should receive RunUserShellCommand event");
+    assert!(
+        has_command_event,
+        "Should receive RunUserShellCommand event"
+    );
     println!("  ✅ RunUserShellCommand + ModelStreaming 事件接收");
 
     // === Turn 3: 列出技能 ===
@@ -203,7 +211,10 @@ async fn e2e_code_review_assistant_scenario() {
             Ok(None) => continue,
         }
     }
-    assert!(has_prompts_response, "Should receive ListCustomPromptsResponse");
+    assert!(
+        has_prompts_response,
+        "Should receive ListCustomPromptsResponse"
+    );
     println!("  ✅ ListCustomPromptsResponse 事件接收");
 
     // === Turn 5: 查看历史记录 ===
@@ -359,7 +370,10 @@ async fn e2e_code_review_assistant_scenario() {
             Ok(None) => continue,
         }
     }
-    assert!(has_warning, "Should receive Warning for OverrideTurnContext");
+    assert!(
+        has_warning,
+        "Should receive Warning for OverrideTurnContext"
+    );
     println!("  ✅ Warning 事件接收（上下文已更新）");
 
     // === Turn 10: 测试 Undo ===

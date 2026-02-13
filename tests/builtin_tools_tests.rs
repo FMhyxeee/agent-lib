@@ -26,9 +26,12 @@ async fn test_filesystem_tool_read_write_delete() {
     let path = "test.txt";
     let content = "hello";
 
-    tool.execute(json!({"operation": "write", "path": path, "content": content}), &ctx)
-        .await
-        .unwrap();
+    tool.execute(
+        json!({"operation": "write", "path": path, "content": content}),
+        &ctx,
+    )
+    .await
+    .unwrap();
 
     let read = tool
         .execute(json!({"operation": "read", "path": path}), &ctx)
@@ -59,7 +62,11 @@ async fn test_shell_tool_exec() {
         .execute(json!({"command": command}), &ctx)
         .await
         .unwrap();
-    let stdout = result.output.get("stdout").and_then(|v| v.as_str()).unwrap();
+    let stdout = result
+        .output
+        .get("stdout")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert!(stdout.contains("hello"));
 }
 
@@ -81,6 +88,10 @@ async fn test_code_exec_tool() {
         .execute(json!({"language": language, "code": code}), &ctx)
         .await
         .unwrap();
-    let stdout = result.output.get("stdout").and_then(|v| v.as_str()).unwrap();
+    let stdout = result
+        .output
+        .get("stdout")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert!(stdout.contains("42"));
 }

@@ -8,6 +8,28 @@ use crate::tools::{
     ApprovalDecision, ApprovalHook, ToolContext, ToolDef, ToolRegistry, ToolResult,
 };
 
+/// 工具执行器 - 管理工具的执行和访问控制
+///
+/// # 功能
+///
+/// - 工具注册表管理
+/// - 访问控制（允许列表、拒绝列表）
+/// - 批准钩子集成
+/// - 策略执行
+///
+/// # 示例
+///
+/// ```rust,ignore
+/// use agent_lib::tools::{ToolExecutor, ToolRegistry, ApprovalHook};
+/// use std::sync::Arc;
+///
+/// let executor = ToolExecutor::new(registry)
+///     .with_approval_hook(Arc::new(MyApprovalHook))
+///     .with_allowlist(vec!["read_file".to_string(), "write_file".to_string()])
+///     .with_denylist(vec!["dangerous_tool".to_string()]);
+///
+/// let result = executor.execute("read_file", json!({"path": "/tmp/file.txt"}), &ctx).await?;
+/// ```
 pub struct ToolExecutor {
     registry: ToolRegistry,
     approval: Option<Arc<dyn ApprovalHook>>,

@@ -123,11 +123,7 @@ impl TaskSession for FakeSession {
         }]
     }
 
-    async fn execute_tool(
-        &self,
-        name: &str,
-        args: serde_json::Value,
-    ) -> AgentResult<ToolResult> {
+    async fn execute_tool(&self, name: &str, args: serde_json::Value) -> AgentResult<ToolResult> {
         if name == "echo" {
             Ok(ToolResult::text(args.to_string()))
         } else {
@@ -148,9 +144,15 @@ async fn test_regular_task_tool_loop() {
     assert!(result.is_some());
 
     let events = session.events.lock().await;
-    let has_tool_request = events.iter().any(|e| matches!(e, Event::ToolCallRequested { .. }));
-    let has_tool_result = events.iter().any(|e| matches!(e, Event::ToolCallResult { .. }));
-    let has_complete = events.iter().any(|e| matches!(e, Event::ModelComplete { .. }));
+    let has_tool_request = events
+        .iter()
+        .any(|e| matches!(e, Event::ToolCallRequested { .. }));
+    let has_tool_result = events
+        .iter()
+        .any(|e| matches!(e, Event::ToolCallResult { .. }));
+    let has_complete = events
+        .iter()
+        .any(|e| matches!(e, Event::ModelComplete { .. }));
     assert!(has_tool_request);
     assert!(has_tool_result);
     assert!(has_complete);

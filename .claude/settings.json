@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "mcp__zread__search_doc"
+      "mcp__zread__search_doc",
+      "Bash(rustfmt --help:*)"
     ]
   }
 }
