@@ -95,6 +95,7 @@ impl AgentBuilder {
             .model
             .ok_or_else(|| AgentError::InvalidConfig("model provider missing".to_string()))?;
         let (_session, handle) = Session::new(self.config.queue_buffer);
+        // _session 现在是 Arc<Session>,但我们暂时不需要它
 
         let mut executor = ToolExecutor::new(self.registry);
         if let Some(hook) = self.approval {
@@ -118,7 +119,8 @@ impl AgentBuilder {
 
 impl Agent {
     pub fn new(config: AgentConfig, model: Arc<dyn ModelClient>, tools: ToolExecutor) -> Self {
-        let (_, handle) = Session::new(config.queue_buffer);
+        let (_session, handle) = Session::new(config.queue_buffer);
+        // _session 现在是 Arc<Session>,但我们暂时不需要它
         Self {
             config,
             model,

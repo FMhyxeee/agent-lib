@@ -139,6 +139,9 @@ impl SessionTask for RegularTask {
 
             // 检查是否有工具调用
             if response.tool_calls.is_empty() {
+                // 修复 P0-1: 将助手响应添加到会话历史
+                session.push_message(Message::assistant(response.content.clone())).await;
+
                 // 没有工具调用，发送响应内容
                 let chunk_size = 20;
                 let mut current_chunk = String::new();
@@ -185,9 +188,9 @@ impl SessionTask for RegularTask {
             let assistant_msg =
                 Message::assistant_with_calls(response.content.clone(), tool_calls.clone());
 
-            // 添加助手消息到历史
-            // 注意：这里我们需要更新会话历史，但 ConversationHistory 不提供直接的单条添加
-            // 我们通过 CompactHistory 来间接添加
+            // 修复 P0-1: 将助手消息添加到会话历史
+            session.push_message(assistant_msg.clone()).await;
+
             debug!(
                 "[{}] Model requested {} tool calls",
                 turn_id,
@@ -276,7 +279,12 @@ impl SessionTask for RegularTask {
                 }
             }
 
-            // 构建新的消息列表（助手消息 + 工具结果消息）
+            // 修复 P0-1: 将工具结果消息添加到会话历史
+            for tool_msg in &tool_messages {
+                session.push_message(tool_msg.clone()).await;
+            }
+
+            // 构建新的消息列表（用于下一轮模型调用）
             current_messages.push(assistant_msg);
             current_messages.extend(tool_messages);
 

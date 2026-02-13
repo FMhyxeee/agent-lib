@@ -24,6 +24,11 @@ pub trait TaskSession: Send + Sync + 'static {
     async fn compact_history(&self, keep_recent: usize, summary: String);
     async fn emit_event(&self, event: Event);
 
+    /// 修复 P0-1: 添加消息到历史（直接写回）
+    ///
+    /// 这是修复 history 修改 bug 的关键方法，确保消息被正确添加到会话历史中。
+    async fn push_message(&self, message: Message);
+
     /// 高效的 token 访问，避免完整克隆
     ///
     /// 这个方法比调用 `history().total_tokens()` 更高效，
@@ -102,6 +107,12 @@ impl TaskSession for SessionArc {
                 compacted_items: vec![],
             })
             .await;
+    }
+
+    async fn push_message(&self, message: Message) {
+        let mut history = self.history.lock().await;
+        history.push(message);
+        // 修改后自动写回（因为 MutexGuard 持有锁直到作用域结束）
     }
 
     async fn emit_event(&self, event: Event) {
@@ -281,12 +292,12 @@ pub struct SessionHandle {
 }
 
 impl Session {
-    pub fn new(buffer: usize) -> (Self, SessionHandle) {
+    pub fn new(buffer: usize) -> (Arc<Self>, SessionHandle) {
         Self::with_config(buffer, SessionConfig::default())
     }
 
-    pub fn with_config(_buffer: usize, config: SessionConfig) -> (Self, SessionHandle) {
-        let (op_sender, op_receiver) = mpsc::channel(config.queue_buffer);
+    pub fn with_config(_buffer: usize, config: SessionConfig) -> (Arc<Self>, SessionHandle) {
+        let (op_sender, mut op_receiver) = mpsc::channel(config.queue_buffer);
         let submission = SubmissionQueue::new(op_sender);
 
         let (event_sender, event_queue) = EventQueue::new(config.event_buffer);
@@ -294,6 +305,7 @@ impl Session {
 
         let model = config.model.clone();
         let tool_executor = config.tool_executor.clone();
+        let queue_buffer = config.queue_buffer;
 
         let session = Self {
             history: Arc::new(Mutex::new(ConversationHistory::new())),
@@ -312,18 +324,31 @@ impl Session {
             event_stream: Arc::new(Mutex::new(event_stream)),
         };
 
-        // 启动增强的 session_loop (支持 RegularTask)
-        tokio::spawn(session_loop_enhanced(
-            Arc::new(SessionArc {
-                history: Arc::clone(&session.history),
-                event_sender: session.event_sender.clone(),
-                model: session.model.clone(),
-                tool_executor: session.tool_executor.clone(),
-            }),
-            op_receiver,
-        ));
+        // 修复 P0-3: 使用完整的 submission_loop 而非简化版本
+        // 将 mpsc::Receiver<Op> 转换为 submission_loop 需要的 mpsc::Receiver<Submission>
+        let sess_arc = Arc::new(session);
+        let sess_clone = Arc::clone(&sess_arc);
 
-        (session, handle)
+        // 创建一个通道来桥接 Op -> Submission
+        let (submission_sender, submission_receiver) = mpsc::channel(queue_buffer);
+
+        // 启动 Op 到 Submission 的转换任务
+        tokio::spawn(async move {
+            use crate::tasks::Submission;
+            let mut op_count = 0;
+            while let Some(op) = op_receiver.recv().await {
+                let submission = Submission::new(format!("op-{}", op_count), op);
+                if submission_sender.send(submission).await.is_err() {
+                    break;
+                }
+                op_count += 1;
+            }
+        });
+
+        // 启动完整的 submission_loop
+        tokio::spawn(crate::tasks::submission_loop(sess_clone, submission_receiver));
+
+        (sess_arc, handle)
     }
 
     /// 获取对话历史
@@ -542,7 +567,7 @@ impl SessionBuilder {
     }
 
     /// 构建 Session
-    pub fn build(self) -> (Session, SessionHandle) {
+    pub fn build(self) -> (Arc<Session>, SessionHandle) {
         Session::with_config(0, self.config)
     }
 }
@@ -600,6 +625,10 @@ impl Session {
     }
 }
 
+// 修复 P0-3: 不再使用简化的 session_loop_enhanced
+// 现在使用完整的 submission_loop (在 src/tasks/loop.rs 中)
+// 保留此代码作为参考,以备将来需要
+/*
 /// 增强的 session_loop - 支持 UserTurn 和模型调用
 async fn session_loop_enhanced(
     sess: Arc<SessionArc>,
@@ -623,10 +652,11 @@ async fn session_loop_enhanced(
                 // 处理 UserTurn - 直接调用模型
                 for item in items {
                     if let UserInputItem::Text { text } = item {
-                        let mut history = sess.history().await;
-                        history.push(crate::model::Message::user(text.clone()));
+                        // 修复 P0-1: 使用 push_message 直接写回历史
+                        sess.push_message(crate::model::Message::user(text.clone())).await;
 
                         // 准备消息
+                        let history = sess.history().await;
                         let messages = history.for_prompt();
                         tracing::debug!("Calling model with {} messages", messages.len());
 
@@ -642,6 +672,11 @@ async fn session_loop_enhanced(
                         let model_result = timeout(Duration::from_secs(60), sess.chat_model(messages, vec![])).await;
                         match model_result {
                             Ok(Ok(response)) => {
+                                // 修复 P0-1: 将助手消息添加到历史
+                                sess.push_message(crate::model::Message::assistant(
+                                    response.content.clone()
+                                )).await;
+
                                 // 分块发送响应 (UTF-8 安全)
                                 let chunk_size = 20;
                                 let mut current_chunk = String::new();
@@ -813,3 +848,4 @@ async fn session_loop_enhanced(
         }
     }
 }
+*/

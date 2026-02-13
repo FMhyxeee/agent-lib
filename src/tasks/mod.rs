@@ -124,6 +124,12 @@ mod tests {
             // Mock implementation
         }
 
+        async fn push_message(&self, message: crate::model::Message) {
+            // Mock implementation - add to history
+            let mut history = self.history.lock().await;
+            history.push(message);
+        }
+
         async fn undo_last_messages(&self, _num_messages: usize) {
             // Mock implementation
         }
