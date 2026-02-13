@@ -1,10 +1,32 @@
 /// 固定模型配置
 ///
-/// 项目当前只支持以下两个模型，所有模型信息在此配置。
+/// 项目当前支持以下模型:
+/// - 标准GLM API (glm provider): glm-4.7, glm-4.7-flashx
+/// - Coding Plan API (glm-coding provider): glm-4.7-coding, glm-4.7-flashx-coding
+///
+/// Coding Plan 模型需要单独的订阅,使用不同的端点。
 use serde::{Deserialize, Serialize};
 
 /// 支持的模型列表
 pub const SUPPORTED_MODELS: &[ModelConfig] = &[
+    // GLM-5 Series (Latest flagship, SOTA)
+    ModelConfig {
+        id: "glm-5",
+        display_name: "GLM-5",
+        provider: "glm",
+        context_window: 128_000,
+        supports_streaming: true,
+        supports_tools: true,
+    },
+    ModelConfig {
+        id: "glm-5-coding",
+        display_name: "GLM-5 (Coding Plan)",
+        provider: "glm-coding",
+        context_window: 128_000,
+        supports_streaming: true,
+        supports_tools: true,
+    },
+    // GLM-4.7 Series
     ModelConfig {
         id: "glm-4.7",
         display_name: "GLM-4.7",
@@ -17,6 +39,22 @@ pub const SUPPORTED_MODELS: &[ModelConfig] = &[
         id: "glm-4.7-flashx",
         display_name: "GLM-4.7-FlashX",
         provider: "glm",
+        context_window: 200_000,
+        supports_streaming: true,
+        supports_tools: true,
+    },
+    ModelConfig {
+        id: "glm-4.7-coding",
+        display_name: "GLM-4.7 (Coding Plan)",
+        provider: "glm-coding",
+        context_window: 200_000,
+        supports_streaming: true,
+        supports_tools: true,
+    },
+    ModelConfig {
+        id: "glm-4.7-flashx-coding",
+        display_name: "GLM-4.7-FlashX (Coding Plan)",
+        provider: "glm-coding",
         context_window: 200_000,
         supports_streaming: true,
         supports_tools: true,
@@ -98,6 +136,38 @@ mod tests {
     #[test]
     fn test_list_models() {
         let models = list_models();
-        assert_eq!(models.len(), 2);
+        assert_eq!(models.len(), 6);
+    }
+
+    #[test]
+    fn test_glm5_config() {
+        let config = get_model_config("glm-5").unwrap();
+        assert_eq!(config.id, "glm-5");
+        assert_eq!(config.context_window, 128_000);
+        assert_eq!(config.provider, "glm");
+    }
+
+    #[test]
+    fn test_glm5_coding_config() {
+        let config = get_model_config("glm-5-coding").unwrap();
+        assert_eq!(config.id, "glm-5-coding");
+        assert_eq!(config.context_window, 128_000);
+        assert_eq!(config.provider, "glm-coding");
+    }
+
+    #[test]
+    fn test_glm_coding_config() {
+        let config = get_model_config("glm-4.7-coding").unwrap();
+        assert_eq!(config.id, "glm-4.7-coding");
+        assert_eq!(config.context_window, 200_000);
+        assert_eq!(config.provider, "glm-coding");
+    }
+
+    #[test]
+    fn test_glm_flashx_coding_config() {
+        let config = get_model_config("glm-4.7-flashx-coding").unwrap();
+        assert_eq!(config.id, "glm-4.7-flashx-coding");
+        assert_eq!(config.context_window, 200_000);
+        assert_eq!(config.provider, "glm-coding");
     }
 }
