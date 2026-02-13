@@ -14,7 +14,7 @@ pub const SUPPORTED_MODELS: &[ModelConfig] = &[
         id: "glm-5",
         display_name: "GLM-5",
         provider: "glm",
-        context_window: 128_000,
+        context_window: 200_000,
         supports_streaming: true,
         supports_tools: true,
     },
@@ -22,7 +22,7 @@ pub const SUPPORTED_MODELS: &[ModelConfig] = &[
         id: "glm-5-coding",
         display_name: "GLM-5 (Coding Plan)",
         provider: "glm-coding",
-        context_window: 128_000,
+        context_window: 200_000,
         supports_streaming: true,
         supports_tools: true,
     },
@@ -143,7 +143,7 @@ mod tests {
     fn test_glm5_config() {
         let config = get_model_config("glm-5").unwrap();
         assert_eq!(config.id, "glm-5");
-        assert_eq!(config.context_window, 128_000);
+        assert_eq!(config.context_window, 200_000);
         assert_eq!(config.provider, "glm");
     }
 
@@ -151,7 +151,7 @@ mod tests {
     fn test_glm5_coding_config() {
         let config = get_model_config("glm-5-coding").unwrap();
         assert_eq!(config.id, "glm-5-coding");
-        assert_eq!(config.context_window, 128_000);
+        assert_eq!(config.context_window, 200_000);
         assert_eq!(config.provider, "glm-coding");
     }
 
