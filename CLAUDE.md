@@ -9,17 +9,14 @@ Please call me '叉叉' when every time you talk to me.
 
 ### Building
 ```bash
-# Build the library (default features: openai, builtin-tools)
+# Build the library
 cargo build
 
-# Build with Codex compatibility (enables tiktoken for precise token counting)
-cargo build --features codex-compat
+# Check build
+cargo check
 
-# Build without default features
-cargo build --no-default-features
-
-# Build with specific features
-cargo build --features openai,mcp
+# Build benchmark targets (without running)
+cargo bench --no-run
 ```
 
 ### Testing
@@ -174,12 +171,12 @@ let (session, handle) = Session::with_config(64, config);
 ```
 
 ### Configuration
-- Features: `openai`, `anthropic`, `local-llm`, `builtin-tools`, `mcp`, `codex-compat`
+- Build mode: flattened build (providers/tools/MCP/skills are compiled by default)
 - Environment variables:
-  - `OPENAI_API_KEY` - OpenAI API key (required for OpenAI feature)
+  - `OPENAI_API_KEY` - OpenAI API key
   - `GLM_BASE_URL` - GLM provider base URL (default: https://open.bigmodel.cn/api/paas/v4/chat/completions)
-  - `GLM_API_KEY` - GLM API key (required for GLM provider)
-  - `ANTHROPIC_API_KEY` - Anthropic API key (required for Anthropic feature)
+  - `GLM_API_KEY` - GLM API key
+  - `ANTHROPIC_API_KEY` - Anthropic API key
 - MCP configuration via JSON/TOML files or environment variables
 
 ## Codex Compatibility Features
@@ -234,7 +231,7 @@ pub struct TurnContext {
 // Approximate counting (fast, ~4 bytes/token)
 let count = approx_token_count("hello world");
 
-// Precise counting (requires codex-compat feature)
+// Precise counting with tiktoken
 let count = tiktoken_count("hello world");
 
 // Truncation policies

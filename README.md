@@ -157,18 +157,14 @@ Transports support health monitoring and automatic failover between endpoints.
 
 ### Feature Flags
 
-Enable specific integrations:
+The library now uses a flattened build: core providers, tools, MCP, and skills are compiled by default.
 
 ```
-# OpenAI + GLM + Tools + MCP + Codex compatibility
-cargo check --features openai,glm,builtin-tools,mcp,codex-compat
+# Validate the library build
+cargo check
 
-# Individual features
-cargo check --features openai        # OpenAI provider
-cargo check --features glm           # GLM provider
-cargo check --features builtin-tools  # Built-in tools
-cargo check --features mcp           # MCP integration
-cargo check --features codex-compat  # Tiktoken for precise counting
+# Build benchmark targets (without running)
+cargo bench --no-run
 ```
 
 ### Advanced Capabilities
@@ -226,7 +222,7 @@ let agent = AgentBuilder::new()
 
 ## Environment Variables
 
-### Required for specific features:
+### Required for specific providers/capabilities:
 
 ```bash
 # OpenAI provider
@@ -245,7 +241,7 @@ MCPSERVER_FILE=./mcp_config.json
 
 ## Examples
 
-Run examples to test features:
+Run examples:
 
 ```bash
 # Basic agent

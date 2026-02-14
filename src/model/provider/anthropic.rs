@@ -1,19 +1,17 @@
-use std::pin::Pin;
+﻿use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-#[cfg(feature = "anthropic")]
 use tokio::sync::mpsc;
-#[cfg(feature = "anthropic")]
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::{AgentError, AgentResult};
-use crate::model::{Message, MessageRole, ModelClient, ModelResponse, StreamChunk};
-#[cfg(feature = "anthropic")]
-use crate::model::{TokenUsage, ToolCall};
+use crate::model::{
+    Message, MessageRole, ModelClient, ModelResponse, StreamChunk, TokenUsage, ToolCall,
+};
 use crate::tools::ToolDef;
 
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -158,80 +156,70 @@ impl ModelClient for AnthropicProvider {
         messages: Vec<Message>,
         tools: Vec<ToolDef>,
     ) -> AgentResult<ModelResponse> {
-        let _ = (&messages, &tools);
-        #[cfg(feature = "anthropic")]
-        {
-            let client = reqwest::Client::new();
-            let (system, converted) = map_messages(messages);
-            let request = AnthropicRequest {
-                model: self.model.clone(),
-                max_tokens: self.max_tokens,
-                messages: converted,
-                system,
-                tools: map_tools(tools),
-                stream: None,
-            };
+        let client = reqwest::Client::new();
+        let (system, converted) = map_messages(messages);
+        let request = AnthropicRequest {
+            model: self.model.clone(),
+            max_tokens: self.max_tokens,
+            messages: converted,
+            system,
+            tools: map_tools(tools),
+            stream: None,
+        };
 
-            let response = client
-                .post(&self.base_url)
-                .headers(auth_headers(self.api_key.as_deref())?)
-                .json(&request)
-                .send()
-                .await
-                .map_err(|err| AgentError::Model(format!("anthropic request failed: {err}")))?;
+        let response = client
+            .post(&self.base_url)
+            .headers(auth_headers(self.api_key.as_deref())?)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|err| AgentError::Model(format!("anthropic request failed: {err}")))?;
 
-            if !response.status().is_success() {
-                return Err(AgentError::Model(format!(
-                    "anthropic request failed with status {}: {}",
-                    response.status(),
-                    response.text().await.unwrap_or_default()
-                )));
-            }
+        if !response.status().is_success() {
+            return Err(AgentError::Model(format!(
+                "anthropic request failed with status {}: {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            )));
+        }
 
-            let response: AnthropicResponse = response
-                .json()
-                .await
-                .map_err(|err| AgentError::Model(format!("anthropic parse failed: {err}")))?;
+        let response: AnthropicResponse = response
+            .json()
+            .await
+            .map_err(|err| AgentError::Model(format!("anthropic parse failed: {err}")))?;
 
-            let mut content = String::new();
-            let mut tool_calls = Vec::new();
-            for block in response.content {
-                match block {
-                    AnthropicContentBlock::Text { text } => {
-                        if !content.is_empty() {
-                            content.push('\n');
-                        }
-                        content.push_str(&text);
+        let mut content = String::new();
+        let mut tool_calls = Vec::new();
+        for block in response.content {
+            match block {
+                AnthropicContentBlock::Text { text } => {
+                    if !content.is_empty() {
+                        content.push('\n');
                     }
-                    AnthropicContentBlock::ToolUse { id, name, input } => {
-                        tool_calls.push(ToolCall {
-                            id,
-                            name,
-                            arguments: input,
-                        });
-                    }
-                    AnthropicContentBlock::ToolResult { .. } => {}
+                    content.push_str(&text);
                 }
+                AnthropicContentBlock::ToolUse { id, name, input } => {
+                    tool_calls.push(ToolCall {
+                        id,
+                        name,
+                        arguments: input,
+                    });
+                }
+                AnthropicContentBlock::ToolResult { .. } => {}
             }
-
-            let usage = response.usage.map(|usage| TokenUsage {
-                prompt_tokens: usage.input_tokens,
-                completion_tokens: usage.output_tokens,
-                total_tokens: usage.input_tokens + usage.output_tokens,
-            });
-
-            Ok(ModelResponse {
-                content,
-                usage: usage.unwrap_or_default(),
-                tool_calls,
-            })
         }
-        #[cfg(not(feature = "anthropic"))]
-        {
-            Err(AgentError::Model(
-                "anthropic feature not enabled".to_string(),
-            ))
-        }
+
+        let usage = response.usage.map(|usage| TokenUsage {
+            prompt_tokens: usage.input_tokens,
+            completion_tokens: usage.output_tokens,
+            total_tokens: usage.input_tokens + usage.output_tokens,
+        });
+
+        Ok(ModelResponse {
+            content,
+            usage: usage.unwrap_or_default(),
+            tool_calls,
+        })
     }
 
     async fn chat_stream(
@@ -239,70 +227,60 @@ impl ModelClient for AnthropicProvider {
         messages: Vec<Message>,
         tools: Vec<ToolDef>,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>> {
-        let _ = (&messages, &tools);
-        #[cfg(feature = "anthropic")]
-        {
-            let client = reqwest::Client::new();
-            let (system, converted) = map_messages(messages);
-            let request = AnthropicRequest {
-                model: self.model.clone(),
-                max_tokens: self.max_tokens,
-                messages: converted,
-                system,
-                tools: map_tools(tools),
-                stream: Some(true),
-            };
+        let client = reqwest::Client::new();
+        let (system, converted) = map_messages(messages);
+        let request = AnthropicRequest {
+            model: self.model.clone(),
+            max_tokens: self.max_tokens,
+            messages: converted,
+            system,
+            tools: map_tools(tools),
+            stream: Some(true),
+        };
 
-            let response = client
-                .post(&self.base_url)
-                .headers(auth_headers(self.api_key.as_deref())?)
-                .json(&request)
-                .send()
-                .await
-                .map_err(|err| AgentError::Model(format!("anthropic request failed: {err}")))?;
+        let response = client
+            .post(&self.base_url)
+            .headers(auth_headers(self.api_key.as_deref())?)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|err| AgentError::Model(format!("anthropic request failed: {err}")))?;
 
-            if !response.status().is_success() {
-                return Err(AgentError::Model(format!(
-                    "anthropic stream failed with status {}: {}",
-                    response.status(),
-                    response.text().await.unwrap_or_default()
-                )));
-            }
+        if !response.status().is_success() {
+            return Err(AgentError::Model(format!(
+                "anthropic stream failed with status {}: {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            )));
+        }
 
-            let mut stream = response.bytes_stream();
-            let (sender, receiver) = mpsc::channel(64);
+        let mut stream = response.bytes_stream();
+        let (sender, receiver) = mpsc::channel(64);
 
-            tokio::spawn(async move {
-                let mut buffer = String::new();
-                while let Some(item) = tokio_stream::StreamExt::next(&mut stream).await {
-                    match item {
-                        Ok(bytes) => {
-                            let chunk = String::from_utf8_lossy(&bytes);
-                            buffer.push_str(&chunk);
-                            while let Some(pos) = buffer.find('\n') {
-                                let line = buffer[..pos].trim().to_string();
-                                buffer = buffer[pos + 1..].to_string();
-                                if line.is_empty() {
-                                    continue;
-                                }
-                                if let Some(delta) = parse_stream_delta(&line) {
-                                    let _ = sender.send(StreamChunk { delta }).await;
-                                }
+        tokio::spawn(async move {
+            let mut buffer = String::new();
+            while let Some(item) = tokio_stream::StreamExt::next(&mut stream).await {
+                match item {
+                    Ok(bytes) => {
+                        let chunk = String::from_utf8_lossy(&bytes);
+                        buffer.push_str(&chunk);
+                        while let Some(pos) = buffer.find('\n') {
+                            let line = buffer[..pos].trim().to_string();
+                            buffer = buffer[pos + 1..].to_string();
+                            if line.is_empty() {
+                                continue;
+                            }
+                            if let Some(delta) = parse_stream_delta(&line) {
+                                let _ = sender.send(StreamChunk { delta }).await;
                             }
                         }
-                        Err(_) => return,
                     }
+                    Err(_) => return,
                 }
-            });
+            }
+        });
 
-            Ok(Box::pin(ReceiverStream::new(receiver)))
-        }
-        #[cfg(not(feature = "anthropic"))]
-        {
-            Err(AgentError::Model(
-                "anthropic feature not enabled".to_string(),
-            ))
-        }
+        Ok(Box::pin(ReceiverStream::new(receiver)))
     }
 }
 
@@ -417,12 +395,11 @@ fn parse_stream_delta(line: &str) -> Option<String> {
         if payload == "[DONE]" {
             return None;
         }
-        if let Ok(data) = serde_json::from_str::<AnthropicStreamData>(payload) {
-            if let AnthropicStreamData::ContentBlockDelta { delta } = data {
-                if let AnthropicDelta::TextDelta { text } = delta {
-                    return Some(text);
-                }
-            }
+        if let Ok(data) = serde_json::from_str::<AnthropicStreamData>(payload)
+            && let AnthropicStreamData::ContentBlockDelta { delta } = data
+            && let AnthropicDelta::TextDelta { text } = delta
+        {
+            return Some(text);
         }
     }
     None

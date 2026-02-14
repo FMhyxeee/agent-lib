@@ -1,18 +1,16 @@
-use std::pin::Pin;
+﻿use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-#[cfg(feature = "local-llm")]
 use tokio::sync::mpsc;
-#[cfg(feature = "local-llm")]
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::error::{AgentError, AgentResult};
-use crate::model::{Message, MessageRole, ModelClient, ModelResponse, StreamChunk};
-#[cfg(feature = "local-llm")]
-use crate::model::{TokenUsage, ToolCall};
+use crate::model::{
+    Message, MessageRole, ModelClient, ModelResponse, StreamChunk, TokenUsage, ToolCall,
+};
 use crate::tools::ToolDef;
 
 const DEFAULT_BASE_URL: &str = "http://localhost:11434/api/chat";
@@ -130,69 +128,59 @@ impl ModelClient for LocalProvider {
         messages: Vec<Message>,
         tools: Vec<ToolDef>,
     ) -> AgentResult<ModelResponse> {
-        let _ = (&messages, &tools);
-        #[cfg(feature = "local-llm")]
-        {
-            let client = reqwest::Client::new();
-            let request = LocalChatRequest {
-                model: self.model.clone(),
-                messages: messages.into_iter().map(map_message).collect(),
-                tools: map_tools(tools),
-                stream: None,
-            };
+        let client = reqwest::Client::new();
+        let request = LocalChatRequest {
+            model: self.model.clone(),
+            messages: messages.into_iter().map(map_message).collect(),
+            tools: map_tools(tools),
+            stream: None,
+        };
 
-            let response = client
-                .post(&self.base_url)
-                .json(&request)
-                .send()
-                .await
-                .map_err(|err| AgentError::Model(format!("local request failed: {err}")))?;
+        let response = client
+            .post(&self.base_url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|err| AgentError::Model(format!("local request failed: {err}")))?;
 
-            if !response.status().is_success() {
-                return Err(AgentError::Model(format!(
-                    "local request failed with status {}: {}",
-                    response.status(),
-                    response.text().await.unwrap_or_default()
-                )));
-            }
+        if !response.status().is_success() {
+            return Err(AgentError::Model(format!(
+                "local request failed with status {}: {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            )));
+        }
 
-            let response: LocalChatResponse = response
-                .json()
-                .await
-                .map_err(|err| AgentError::Model(format!("local parse failed: {err}")))?;
+        let response: LocalChatResponse = response
+            .json()
+            .await
+            .map_err(|err| AgentError::Model(format!("local parse failed: {err}")))?;
 
-            let message = response.message;
-            let content = message
-                .as_ref()
-                .and_then(|msg| msg.content.clone())
-                .unwrap_or_default();
+        let message = response.message;
+        let content = message
+            .as_ref()
+            .and_then(|msg| msg.content.clone())
+            .unwrap_or_default();
 
-            let tool_calls = message
-                .and_then(|msg| msg.tool_calls)
-                .map(|calls| {
-                    calls
-                        .into_iter()
-                        .map(|tc| ToolCall {
-                            id: tc.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-                            name: tc.function.name,
-                            arguments: tc.function.arguments,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            Ok(ModelResponse {
-                content,
-                usage: TokenUsage::default(),
-                tool_calls,
+        let tool_calls = message
+            .and_then(|msg| msg.tool_calls)
+            .map(|calls| {
+                calls
+                    .into_iter()
+                    .map(|tc| ToolCall {
+                        id: tc.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                        name: tc.function.name,
+                        arguments: tc.function.arguments,
+                    })
+                    .collect()
             })
-        }
-        #[cfg(not(feature = "local-llm"))]
-        {
-            Err(AgentError::Model(
-                "local-llm feature not enabled".to_string(),
-            ))
-        }
+            .unwrap_or_default();
+
+        Ok(ModelResponse {
+            content,
+            usage: TokenUsage::default(),
+            tool_calls,
+        })
     }
 
     async fn chat_stream(
@@ -200,68 +188,58 @@ impl ModelClient for LocalProvider {
         messages: Vec<Message>,
         tools: Vec<ToolDef>,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>> {
-        let _ = (&messages, &tools);
-        #[cfg(feature = "local-llm")]
-        {
-            let client = reqwest::Client::new();
-            let request = LocalChatRequest {
-                model: self.model.clone(),
-                messages: messages.into_iter().map(map_message).collect(),
-                tools: map_tools(tools),
-                stream: Some(true),
-            };
+        let client = reqwest::Client::new();
+        let request = LocalChatRequest {
+            model: self.model.clone(),
+            messages: messages.into_iter().map(map_message).collect(),
+            tools: map_tools(tools),
+            stream: Some(true),
+        };
 
-            let response = client
-                .post(&self.base_url)
-                .json(&request)
-                .send()
-                .await
-                .map_err(|err| AgentError::Model(format!("local request failed: {err}")))?;
+        let response = client
+            .post(&self.base_url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|err| AgentError::Model(format!("local request failed: {err}")))?;
 
-            if !response.status().is_success() {
-                return Err(AgentError::Model(format!(
-                    "local stream failed with status {}: {}",
-                    response.status(),
-                    response.text().await.unwrap_or_default()
-                )));
-            }
+        if !response.status().is_success() {
+            return Err(AgentError::Model(format!(
+                "local stream failed with status {}: {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            )));
+        }
 
-            let mut stream = response.bytes_stream();
-            let (sender, receiver) = mpsc::channel(64);
+        let mut stream = response.bytes_stream();
+        let (sender, receiver) = mpsc::channel(64);
 
-            tokio::spawn(async move {
-                let mut buffer = String::new();
-                while let Some(item) = tokio_stream::StreamExt::next(&mut stream).await {
-                    match item {
-                        Ok(bytes) => {
-                            let chunk = String::from_utf8_lossy(&bytes);
-                            buffer.push_str(&chunk);
-                            while let Some(pos) = buffer.find('\n') {
-                                let line = buffer[..pos].trim().to_string();
-                                buffer = buffer[pos + 1..].to_string();
-                                if line.is_empty() {
-                                    continue;
-                                }
-                                if let Ok(delta) = parse_stream_delta(&line) {
-                                    if let Some(text) = delta {
-                                        let _ = sender.send(StreamChunk { delta: text }).await;
-                                    }
-                                }
+        tokio::spawn(async move {
+            let mut buffer = String::new();
+            while let Some(item) = tokio_stream::StreamExt::next(&mut stream).await {
+                match item {
+                    Ok(bytes) => {
+                        let chunk = String::from_utf8_lossy(&bytes);
+                        buffer.push_str(&chunk);
+                        while let Some(pos) = buffer.find('\n') {
+                            let line = buffer[..pos].trim().to_string();
+                            buffer = buffer[pos + 1..].to_string();
+                            if line.is_empty() {
+                                continue;
+                            }
+                            if let Ok(delta) = parse_stream_delta(&line)
+                                && let Some(text) = delta
+                            {
+                                let _ = sender.send(StreamChunk { delta: text }).await;
                             }
                         }
-                        Err(_) => return,
                     }
+                    Err(_) => return,
                 }
-            });
+            }
+        });
 
-            Ok(Box::pin(ReceiverStream::new(receiver)))
-        }
-        #[cfg(not(feature = "local-llm"))]
-        {
-            Err(AgentError::Model(
-                "local-llm feature not enabled".to_string(),
-            ))
-        }
+        Ok(Box::pin(ReceiverStream::new(receiver)))
     }
 }
 
