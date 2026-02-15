@@ -3,25 +3,41 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures::{SinkExt, StreamExt};
+use rmcp::model::{
+    CallToolRequestParam, GetPromptRequestParam, PromptMessageContent, PromptMessageRole,
+    ReadResourceRequestParam, ResourceContents,
+};
+use rmcp::service::RunningService;
+use rmcp::transport::TokioChildProcess;
+use rmcp::{RoleClient, ServiceExt};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use crate::error::{AgentError, AgentResult};
 use crate::mcp::config::{AuthConfig, TlsConfig, TransportType};
-use crate::mcp::{McpRequest, McpResponse};
+use crate::mcp::{
+    McpPrompt, McpPromptArgument, McpPromptContent, McpPromptMessage, McpPromptResult, McpRequest,
+    McpResource, McpResourceContent, McpResponse, McpTool,
+};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 
+type RmcpClientService = RunningService<RoleClient, ()>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransportConfig {
+    #[serde(default)]
     pub endpoint: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct EnhancedTransportConfig {
     pub endpoint: String,
+    pub command: Option<String>,
+    pub args: Vec<String>,
     pub transport_type: TransportType,
     pub auth: Option<AuthConfig>,
     pub headers: HashMap<String, String>,
@@ -35,6 +51,8 @@ impl Default for EnhancedTransportConfig {
     fn default() -> Self {
         Self {
             endpoint: String::new(),
+            command: None,
+            args: Vec::new(),
             transport_type: TransportType::Stdio,
             auth: None,
             headers: HashMap::new(),
@@ -50,6 +68,8 @@ impl From<TransportConfig> for EnhancedTransportConfig {
     fn from(config: TransportConfig) -> Self {
         Self {
             endpoint: config.endpoint,
+            command: None,
+            args: Vec::new(),
             ..Default::default()
         }
     }
@@ -57,7 +77,7 @@ impl From<TransportConfig> for EnhancedTransportConfig {
 
 #[derive(Debug)]
 pub enum TransportKind {
-    Stdio(Arc<Mutex<Child>>),
+    Stdio(Arc<Mutex<RmcpClientService>>),
     Tcp(String),
     Http(String),
     Ws(String),
@@ -104,26 +124,26 @@ impl McpTransport {
 
         let kind = match config.transport_type {
             TransportType::Stdio => {
-                let command = endpoint.trim_start_matches("stdio://");
-                let mut parts = command.split_whitespace();
-                let program = parts
-                    .next()
-                    .ok_or_else(|| AgentError::Mcp("missing stdio command".to_string()))?;
-                let args: Vec<String> = parts.map(|arg| arg.to_string()).collect();
+                let (program, args) = if let Some(command) = config.command.as_ref() {
+                    let trimmed = command.trim();
+                    if trimmed.is_empty() {
+                        return Err(AgentError::Mcp("missing stdio command".to_string()));
+                    }
+                    (trimmed.to_string(), config.args.clone())
+                } else {
+                    let command = endpoint.trim_start_matches("stdio://");
+                    let mut parts = command.split_whitespace();
+                    let program = parts
+                        .next()
+                        .ok_or_else(|| AgentError::Mcp("missing stdio command".to_string()))?;
+                    let args: Vec<String> = parts.map(|arg| arg.to_string()).collect();
+                    (program.to_string(), args)
+                };
 
-                // Set environment variables
-                let mut command = Command::new(program);
-                for (key, value) in &config.env {
-                    command.env(key, value);
-                }
-                command.args(args);
-
-                let child = command
-                    .stdin(std::process::Stdio::piped())
-                    .stdout(std::process::Stdio::piped())
-                    .spawn()
+                let service = connect_stdio_client(&program, &args, &config.env)
+                    .await
                     .map_err(|err| AgentError::Mcp(format!("spawn stdio failed: {err}")))?;
-                TransportKind::Stdio(Arc::new(Mutex::new(child)))
+                TransportKind::Stdio(Arc::new(Mutex::new(service)))
             }
             TransportType::Tcp => {
                 // For TCP, the endpoint should be the address
@@ -155,40 +175,9 @@ impl McpTransport {
         loop {
             let request = base_request.clone();
             let result = match &self.kind {
-                TransportKind::Stdio(child) => {
-                    let mut child = child.lock().await;
-                    let payload = serde_json::to_string(&request)
-                        .map_err(|err| AgentError::Mcp(format!("serialize failed: {err}")))?;
-                    {
-                        let stdin = child
-                            .stdin
-                            .as_mut()
-                            .ok_or_else(|| AgentError::Mcp("stdio stdin closed".to_string()))?;
-                        stdin
-                            .write_all(payload.as_bytes())
-                            .await
-                            .map_err(|err| AgentError::Mcp(format!("write failed: {err}")))?;
-                        stdin.write_all(b"\n").await.map_err(|err| {
-                            AgentError::Mcp(format!("write newline failed: {err}"))
-                        })?;
-                        stdin
-                            .flush()
-                            .await
-                            .map_err(|err| AgentError::Mcp(format!("flush failed: {err}")))?;
-                    }
-
-                    let stdout = child
-                        .stdout
-                        .as_mut()
-                        .ok_or_else(|| AgentError::Mcp("stdio stdout closed".to_string()))?;
-                    let mut reader = BufReader::new(stdout);
-                    let mut line = String::new();
-                    reader
-                        .read_line(&mut line)
-                        .await
-                        .map_err(|err| AgentError::Mcp(format!("read failed: {err}")))?;
-                    serde_json::from_str::<McpResponse>(&line)
-                        .map_err(|err| AgentError::Mcp(format!("parse failed: {err}")))
+                TransportKind::Stdio(service) => {
+                    let mut service = service.lock().await;
+                    self.send_stdio_request(&mut service, request).await
                 }
                 TransportKind::Tcp(address) => {
                     let mut stream = tokio::net::TcpStream::connect(address)
@@ -233,6 +222,123 @@ impl McpTransport {
                 }
             }
         }
+    }
+
+    async fn send_stdio_request(
+        &self,
+        service: &mut RmcpClientService,
+        request: McpRequest,
+    ) -> AgentResult<McpResponse> {
+        let method = request.method.as_str();
+        let result = match method {
+            "tools/list" => {
+                let tools = service
+                    .list_all_tools()
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("tools/list failed: {err}")))?;
+                let mapped: Vec<McpTool> = tools.into_iter().map(map_rmcp_tool).collect();
+                serde_json::to_value(mapped)
+                    .map_err(|err| AgentError::Mcp(format!("serialize tools failed: {err}")))?
+            }
+            "tools/call" => {
+                let params = request.params.as_object().ok_or_else(|| {
+                    AgentError::Mcp("tools/call params must be an object".to_string())
+                })?;
+                let name = params
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AgentError::Mcp("tools/call missing name".to_string()))?;
+                let arguments = params
+                    .get("args")
+                    .or_else(|| params.get("arguments"))
+                    .and_then(Value::as_object)
+                    .cloned();
+
+                let call_result = service
+                    .call_tool(CallToolRequestParam {
+                        name: name.to_string().into(),
+                        arguments,
+                    })
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("tools/call failed: {err}")))?;
+
+                serde_json::to_value(call_result).map_err(|err| {
+                    AgentError::Mcp(format!("serialize tool result failed: {err}"))
+                })?
+            }
+            "resources/list" => {
+                let resources = service
+                    .list_all_resources()
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("resources/list failed: {err}")))?;
+                let mapped: Vec<McpResource> =
+                    resources.into_iter().map(map_rmcp_resource).collect();
+                serde_json::to_value(mapped)
+                    .map_err(|err| AgentError::Mcp(format!("serialize resources failed: {err}")))?
+            }
+            "resources/read" => {
+                let params = request.params.as_object().ok_or_else(|| {
+                    AgentError::Mcp("resources/read params must be an object".to_string())
+                })?;
+                let uri = params
+                    .get("uri")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AgentError::Mcp("resources/read missing uri".to_string()))?;
+
+                let read_result = service
+                    .read_resource(ReadResourceRequestParam {
+                        uri: uri.to_string(),
+                    })
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("resources/read failed: {err}")))?;
+                let mapped = map_rmcp_resource_content(read_result)?;
+                serde_json::to_value(mapped).map_err(|err| {
+                    AgentError::Mcp(format!("serialize resource content failed: {err}"))
+                })?
+            }
+            "prompts/list" => {
+                let prompts = service
+                    .list_all_prompts()
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("prompts/list failed: {err}")))?;
+                let mapped: Vec<McpPrompt> = prompts.into_iter().map(map_rmcp_prompt).collect();
+                serde_json::to_value(mapped)
+                    .map_err(|err| AgentError::Mcp(format!("serialize prompts failed: {err}")))?
+            }
+            "prompts/get" => {
+                let params = request.params.as_object().ok_or_else(|| {
+                    AgentError::Mcp("prompts/get params must be an object".to_string())
+                })?;
+                let name = params
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AgentError::Mcp("prompts/get missing name".to_string()))?;
+                let arguments = params.get("arguments").and_then(Value::as_object).cloned();
+
+                let prompt_result = service
+                    .get_prompt(GetPromptRequestParam {
+                        name: name.to_string(),
+                        arguments,
+                    })
+                    .await
+                    .map_err(|err| AgentError::Mcp(format!("prompts/get failed: {err}")))?;
+                let mapped = map_rmcp_prompt_result(prompt_result);
+                serde_json::to_value(mapped).map_err(|err| {
+                    AgentError::Mcp(format!("serialize prompt result failed: {err}"))
+                })?
+            }
+            _ => {
+                return Err(AgentError::Mcp(format!(
+                    "unsupported MCP method for stdio transport: {method}"
+                )));
+            }
+        };
+
+        Ok(McpResponse {
+            id: request.id,
+            result,
+            error: None,
+        })
     }
 
     async fn send_http_request(&self, url: &str, request: McpRequest) -> AgentResult<McpResponse> {
@@ -363,6 +469,278 @@ impl McpTransport {
 
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_stdio_command_attempts_keep_first_command() {
+        let args = vec!["-y".to_string(), "@z_ai/mcp-server".to_string()];
+        let attempts = stdio_command_attempts("npx", &args);
+
+        assert!(!attempts.is_empty());
+        assert_eq!(attempts[0].program, "npx");
+        assert_eq!(attempts[0].args, args);
+    }
+
+    #[test]
+    fn test_map_rmcp_tool_uses_input_schema() {
+        let mut schema = serde_json::Map::new();
+        schema.insert("type".to_string(), Value::String("object".to_string()));
+
+        let tool = rmcp::model::Tool {
+            name: "demo".into(),
+            title: None,
+            description: Some("demo tool".into()),
+            input_schema: Arc::new(schema.clone()),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+            meta: None,
+        };
+
+        let mapped = map_rmcp_tool(tool);
+        assert_eq!(mapped.name, "demo");
+        assert_eq!(mapped.description, "demo tool");
+        assert_eq!(mapped.schema, Value::Object(schema));
+    }
+
+    #[test]
+    fn test_map_rmcp_resource_content_from_text() {
+        let result = rmcp::model::ReadResourceResult {
+            contents: vec![ResourceContents::TextResourceContents {
+                uri: "file:///demo.txt".to_string(),
+                mime_type: Some("text/plain".to_string()),
+                text: "hello".to_string(),
+                meta: None,
+            }],
+        };
+
+        let mapped = map_rmcp_resource_content(result).expect("mapping should succeed");
+        assert_eq!(mapped.uri, "file:///demo.txt");
+        assert_eq!(mapped.mime_type.as_deref(), Some("text/plain"));
+        assert_eq!(mapped.content, "hello");
+    }
+
+    #[test]
+    fn test_map_rmcp_resource_content_from_blob() {
+        let result = rmcp::model::ReadResourceResult {
+            contents: vec![ResourceContents::BlobResourceContents {
+                uri: "file:///demo.bin".to_string(),
+                mime_type: Some("application/octet-stream".to_string()),
+                blob: "YmFzZTY0".to_string(),
+                meta: None,
+            }],
+        };
+
+        let mapped = map_rmcp_resource_content(result).expect("mapping should succeed");
+        assert_eq!(mapped.uri, "file:///demo.bin");
+        assert_eq!(
+            mapped.mime_type.as_deref(),
+            Some("application/octet-stream")
+        );
+        assert_eq!(mapped.content, "YmFzZTY0");
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CommandAttempt {
+    program: String,
+    args: Vec<String>,
+}
+
+impl CommandAttempt {
+    fn new(program: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            program: program.into(),
+            args,
+        }
+    }
+
+    fn display(&self) -> String {
+        if self.args.is_empty() {
+            self.program.clone()
+        } else {
+            format!("{} {}", self.program, self.args.join(" "))
+        }
+    }
+}
+
+#[cfg(windows)]
+fn stdio_command_attempts(program: &str, args: &[String]) -> Vec<CommandAttempt> {
+    let mut attempts = vec![CommandAttempt::new(program.to_string(), args.to_vec())];
+
+    let is_simple_program_name =
+        !program.contains('.') && !program.contains('\\') && !program.contains('/');
+    if is_simple_program_name {
+        for suffix in [".cmd", ".exe", ".bat"] {
+            attempts.push(CommandAttempt::new(
+                format!("{program}{suffix}"),
+                args.to_vec(),
+            ));
+        }
+
+        let mut shell_args = Vec::with_capacity(args.len() + 2);
+        shell_args.push("/C".to_string());
+        shell_args.push(program.to_string());
+        shell_args.extend(args.iter().cloned());
+
+        attempts.push(CommandAttempt::new("cmd", shell_args.clone()));
+        attempts.push(CommandAttempt::new("cmd.exe", shell_args));
+    }
+
+    attempts
+}
+
+#[cfg(not(windows))]
+fn stdio_command_attempts(program: &str, args: &[String]) -> Vec<CommandAttempt> {
+    vec![CommandAttempt::new(program.to_string(), args.to_vec())]
+}
+
+async fn connect_stdio_client(
+    program: &str,
+    args: &[String],
+    env: &HashMap<String, String>,
+) -> Result<RmcpClientService, String> {
+    let mut last_error: Option<String> = None;
+
+    for attempt in stdio_command_attempts(program, args) {
+        let label = attempt.display();
+
+        let mut command = Command::new(&attempt.program);
+        command.args(&attempt.args);
+        for (key, value) in env {
+            command.env(key, value);
+        }
+
+        match TokioChildProcess::new(command) {
+            Ok(transport) => match ().serve(transport).await {
+                Ok(service) => return Ok(service),
+                Err(err) => {
+                    last_error = Some(format!("initialize failed for `{label}`: {err}"));
+                }
+            },
+            Err(err) => {
+                last_error = Some(format!("spawn failed for `{label}`: {err}"));
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| "unknown error".to_string()))
+}
+
+fn map_rmcp_tool(tool: rmcp::model::Tool) -> McpTool {
+    McpTool {
+        name: tool.name.into_owned(),
+        description: tool
+            .description
+            .map(|desc| desc.into_owned())
+            .unwrap_or_default(),
+        schema: Value::Object((*tool.input_schema).clone()),
+    }
+}
+
+fn map_rmcp_resource(resource: rmcp::model::Resource) -> McpResource {
+    let raw = resource.raw;
+    McpResource {
+        uri: raw.uri,
+        name: raw.name,
+        description: raw.description,
+        mime_type: raw.mime_type,
+    }
+}
+
+fn map_rmcp_resource_content(
+    result: rmcp::model::ReadResourceResult,
+) -> AgentResult<McpResourceContent> {
+    let first = result
+        .contents
+        .into_iter()
+        .next()
+        .ok_or_else(|| AgentError::Mcp("resource response had no contents".to_string()))?;
+
+    match first {
+        ResourceContents::TextResourceContents {
+            uri,
+            mime_type,
+            text,
+            ..
+        } => Ok(McpResourceContent {
+            uri,
+            mime_type,
+            content: text,
+        }),
+        ResourceContents::BlobResourceContents {
+            uri,
+            mime_type,
+            blob,
+            ..
+        } => Ok(McpResourceContent {
+            uri,
+            mime_type,
+            content: blob,
+        }),
+    }
+}
+
+fn map_rmcp_prompt(prompt: rmcp::model::Prompt) -> McpPrompt {
+    McpPrompt {
+        name: prompt.name,
+        description: prompt.description,
+        arguments: prompt.arguments.map(|arguments| {
+            arguments
+                .into_iter()
+                .map(|arg| McpPromptArgument {
+                    name: arg.name,
+                    description: arg.description,
+                    required: arg.required.unwrap_or(false),
+                })
+                .collect()
+        }),
+    }
+}
+
+fn map_rmcp_prompt_result(result: rmcp::model::GetPromptResult) -> McpPromptResult {
+    McpPromptResult {
+        description: result.description,
+        messages: result
+            .messages
+            .into_iter()
+            .map(|message| {
+                let role = match message.role {
+                    PromptMessageRole::User => "user".to_string(),
+                    PromptMessageRole::Assistant => "assistant".to_string(),
+                };
+
+                let content = match message.content {
+                    PromptMessageContent::Text { text } => McpPromptContent::Text { text },
+                    PromptMessageContent::Image { image } => {
+                        let raw = image.raw;
+                        McpPromptContent::Image {
+                            data: raw.data,
+                            mime_type: raw.mime_type,
+                        }
+                    }
+                    PromptMessageContent::Resource { resource } => match resource.raw.resource {
+                        ResourceContents::TextResourceContents { text, .. } => {
+                            McpPromptContent::Text { text }
+                        }
+                        ResourceContents::BlobResourceContents { blob, .. } => {
+                            McpPromptContent::Text { text: blob }
+                        }
+                    },
+                    PromptMessageContent::ResourceLink { link } => {
+                        McpPromptContent::Text { text: link.raw.uri }
+                    }
+                };
+
+                McpPromptMessage { role, content }
+            })
+            .collect(),
     }
 }
 

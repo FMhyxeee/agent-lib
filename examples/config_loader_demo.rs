@@ -198,6 +198,8 @@ async fn test_config_validation() {
         transport_config: TransportConfig {
             endpoint: "http://example.com".to_string(),
         },
+        command: None,
+        args: Vec::new(),
         auth: None,
         headers: std::collections::HashMap::new(),
         tls: None,
@@ -219,6 +221,8 @@ async fn test_config_validation() {
         transport_config: TransportConfig {
             endpoint: "http://example1.com".to_string(),
         },
+        command: None,
+        args: Vec::new(),
         auth: None,
         headers: std::collections::HashMap::new(),
         tls: None,
@@ -233,6 +237,8 @@ async fn test_config_validation() {
         transport_config: TransportConfig {
             endpoint: "http://example2.com".to_string(),
         },
+        command: None,
+        args: Vec::new(),
         auth: None,
         headers: std::collections::HashMap::new(),
         tls: None,
@@ -254,6 +260,8 @@ async fn test_config_validation() {
         transport_config: TransportConfig {
             endpoint: "http://example.com".to_string(),
         },
+        command: None,
+        args: Vec::new(),
         auth: Some(AuthConfig {
             auth_type: AuthType::Bearer,
             token: None, // Missing token for Bearer auth

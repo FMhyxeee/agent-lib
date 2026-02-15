@@ -1,6 +1,9 @@
+use serde::de::{self, Deserializer, Unexpected, Visitor};
+use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +25,14 @@ pub struct ServerConfig {
     #[serde(flatten)]
     pub transport_config: TransportConfig,
 
+    /// Stdio command (used when transport=stdio)
+    #[serde(default)]
+    pub command: Option<String>,
+
+    /// Stdio command arguments (used when transport=stdio)
+    #[serde(default)]
+    pub args: Vec<String>,
+
     /// Authentication configuration
     #[serde(default)]
     pub auth: Option<AuthConfig>,
@@ -35,7 +46,11 @@ pub struct ServerConfig {
     pub tls: Option<TlsConfig>,
 
     /// Server-specific timeout
-    #[serde(default = "default_timeout")]
+    #[serde(
+        default = "default_timeout",
+        serialize_with = "duration_seconds::serialize",
+        deserialize_with = "duration_seconds::deserialize"
+    )]
     pub timeout: Duration,
 
     /// Whether this server is enabled
@@ -160,7 +175,11 @@ pub struct McpConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
     /// Default timeout for all MCP operations
-    #[serde(default = "default_timeout")]
+    #[serde(
+        default = "default_timeout",
+        serialize_with = "duration_seconds::serialize",
+        deserialize_with = "duration_seconds::deserialize"
+    )]
     pub default_timeout: Duration,
 
     /// Maximum number of retries for failed operations
@@ -301,6 +320,17 @@ impl McpConfig {
         for server in &mut self.servers {
             // Expand server name
             server.name = Self::expand_env_vars(&server.name);
+            server.transport_config.endpoint =
+                Self::expand_env_vars(&server.transport_config.endpoint);
+            server.command = server
+                .command
+                .as_ref()
+                .map(|cmd| Self::expand_env_vars(cmd));
+            server.args = server
+                .args
+                .iter()
+                .map(|arg| Self::expand_env_vars(arg))
+                .collect();
 
             // Expand environment variables in headers
             let mut expanded_headers = HashMap::new();
@@ -429,6 +459,32 @@ impl McpConfig {
                 server_names.insert(server.name.clone());
             }
 
+            let endpoint = server.transport_config.endpoint.trim();
+            match server.transport {
+                TransportType::Stdio => {
+                    let has_command = server
+                        .command
+                        .as_ref()
+                        .map(|cmd| !cmd.trim().is_empty())
+                        .unwrap_or(false);
+                    let has_endpoint = !endpoint.is_empty();
+                    if !has_command && !has_endpoint {
+                        errors.push(format!(
+                            "Server '{}' requires either command or endpoint for stdio transport",
+                            server.name
+                        ));
+                    }
+                }
+                _ => {
+                    if endpoint.is_empty() {
+                        errors.push(format!(
+                            "Server '{}' requires endpoint for {:?} transport",
+                            server.name, server.transport
+                        ));
+                    }
+                }
+            }
+
             // Validate authentication configuration
             if let Some(ref auth) = server.auth {
                 match auth.auth_type {
@@ -530,6 +586,111 @@ fn default_max_retries() -> usize {
     3
 }
 
+mod duration_seconds {
+    use super::*;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(duration.as_secs())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct DurationSecondsVisitor;
+
+        impl<'de> Visitor<'de> for DurationSecondsVisitor {
+            type Value = Duration;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(
+                    "a duration in seconds (integer/float), \
+                     a numeric string, or a struct with secs field",
+                )
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Duration::from_secs(value))
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if value < 0 {
+                    return Err(E::invalid_value(Unexpected::Signed(value), &self));
+                }
+                Ok(Duration::from_secs(value as u64))
+            }
+
+            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if !value.is_finite() || value < 0.0 {
+                    return Err(E::invalid_value(Unexpected::Float(value), &self));
+                }
+                Ok(Duration::from_secs_f64(value))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    return Err(E::invalid_value(Unexpected::Str(value), &self));
+                }
+                let secs = trimmed.parse::<f64>().map_err(|_| {
+                    E::invalid_value(Unexpected::Str(value), &"a numeric string in seconds")
+                })?;
+                if !secs.is_finite() || secs < 0.0 {
+                    return Err(E::invalid_value(Unexpected::Str(value), &self));
+                }
+                Ok(Duration::from_secs_f64(secs))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut secs: Option<u64> = None;
+                let mut nanos: u32 = 0;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "secs" => secs = Some(map.next_value::<u64>()?),
+                        "nanos" => nanos = map.next_value::<u32>()?,
+                        _ => {
+                            let _: de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                match secs {
+                    Some(secs) => Ok(Duration::new(secs, nanos)),
+                    None => Err(de::Error::missing_field("secs")),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(DurationSecondsVisitor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -578,6 +739,8 @@ mod tests {
             transport_config: TransportConfig {
                 endpoint: "http://example.com".to_string(),
             },
+            command: None,
+            args: Vec::new(),
             auth: None,
             headers: HashMap::new(),
             tls: None,
@@ -595,6 +758,8 @@ mod tests {
             transport_config: TransportConfig {
                 endpoint: "http://example2.com".to_string(),
             },
+            command: None,
+            args: Vec::new(),
             auth: None,
             headers: HashMap::new(),
             tls: None,
@@ -604,5 +769,101 @@ mod tests {
         });
 
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_stdio_requires_command_or_endpoint() {
+        let mut config = McpConfig::default();
+        config.servers.push(ServerConfig {
+            name: "stdio-invalid".to_string(),
+            transport: TransportType::Stdio,
+            transport_config: TransportConfig {
+                endpoint: String::new(),
+            },
+            command: None,
+            args: Vec::new(),
+            auth: None,
+            headers: HashMap::new(),
+            tls: None,
+            timeout: Duration::from_secs(10),
+            enabled: true,
+            env: HashMap::new(),
+        });
+
+        assert!(config.validate().is_err());
+
+        config.servers[0].command = Some("npx".to_string());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_non_stdio_requires_endpoint() {
+        let mut config = McpConfig::default();
+        config.servers.push(ServerConfig {
+            name: "http-invalid".to_string(),
+            transport: TransportType::Http,
+            transport_config: TransportConfig {
+                endpoint: String::new(),
+            },
+            command: None,
+            args: Vec::new(),
+            auth: None,
+            headers: HashMap::new(),
+            tls: None,
+            timeout: Duration::from_secs(10),
+            enabled: true,
+            env: HashMap::new(),
+        });
+
+        assert!(config.validate().is_err());
+
+        config.servers[0].transport_config.endpoint = "https://example.com/mcp".to_string();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_parse_duration_from_numbers() {
+        let json = r#"
+        {
+          "general": {
+            "default_timeout": 45,
+            "max_retries": 2,
+            "logging_enabled": true
+          },
+          "servers": []
+        }
+        "#;
+
+        let cfg: McpConfig = serde_json::from_str(json).expect("parse config");
+        assert_eq!(cfg.general.default_timeout, Duration::from_secs(45));
+    }
+
+    #[test]
+    fn test_parse_stdio_command_and_args() {
+        let json = r#"
+        {
+          "general": {
+            "default_timeout": 30,
+            "max_retries": 3,
+            "logging_enabled": true
+          },
+          "servers": [
+            {
+              "name": "filesystem",
+              "transport": "stdio",
+              "command": "npx",
+              "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\\\My Files"],
+              "timeout": 60,
+              "enabled": true
+            }
+          ]
+        }
+        "#;
+
+        let cfg: McpConfig = serde_json::from_str(json).expect("parse config");
+        let server = &cfg.servers[0];
+        assert_eq!(server.command.as_deref(), Some("npx"));
+        assert_eq!(server.args.len(), 3);
+        assert_eq!(server.timeout, Duration::from_secs(60));
     }
 }

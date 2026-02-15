@@ -307,6 +307,8 @@ impl McpManager {
     ) -> AgentResult<EnhancedTransportConfig> {
         Ok(EnhancedTransportConfig {
             endpoint: config.transport_config.endpoint.clone(),
+            command: config.command.clone(),
+            args: config.args.clone(),
             transport_type: config.transport.clone(),
             auth: config.auth.clone(),
             headers: config.headers.clone(),
