@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use futures::StreamExt;
+use serde::Deserialize;
 use serde_json::Value;
 use std::pin::Pin;
 
@@ -12,6 +13,8 @@ pub struct OpenAiProvider {
     pub model: String,
     pub api_key: Option<String>,
 }
+
+const MULTIMODAL_MARKER: &str = "__AI_HELPER_MM_V1__";
 
 impl OpenAiProvider {
     pub fn new(model: impl Into<String>) -> Self {
@@ -41,9 +44,8 @@ impl ModelClient for OpenAiProvider {
             ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
             ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
             ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
-            ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-            ChatCompletionTool, ChatCompletionToolType, CreateChatCompletionRequest,
-            FunctionObject,
+            ChatCompletionRequestUserMessage, ChatCompletionTool, ChatCompletionToolType,
+            CreateChatCompletionRequest, FunctionObject,
         };
 
         let config = if let Some(key) = &self.api_key {
@@ -64,7 +66,7 @@ impl ModelClient for OpenAiProvider {
                 }
                 crate::model::MessageRole::User => {
                     ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
-                        content: ChatCompletionRequestUserMessageContent::Text(msg.content),
+                        content: to_openai_user_content(msg.content),
                         name: None,
                     })
                 }
@@ -192,9 +194,8 @@ impl ModelClient for OpenAiProvider {
             ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
             ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
             ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
-            ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-            ChatCompletionTool, ChatCompletionToolType, CreateChatCompletionRequest,
-            FunctionObject,
+            ChatCompletionRequestUserMessage, ChatCompletionTool, ChatCompletionToolType,
+            CreateChatCompletionRequest, FunctionObject,
         };
 
         let config = if let Some(key) = &self.api_key {
@@ -215,7 +216,7 @@ impl ModelClient for OpenAiProvider {
                 }
                 crate::model::MessageRole::User => {
                     ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
-                        content: ChatCompletionRequestUserMessageContent::Text(msg.content),
+                        content: to_openai_user_content(msg.content),
                         name: None,
                     })
                 }
@@ -318,5 +319,93 @@ impl ModelClient for OpenAiProvider {
         });
 
         Ok(Box::pin(mapped))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct EncodedMultimodalImage {
+    data_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EncodedMultimodalInput {
+    text: String,
+    #[serde(default)]
+    images: Vec<EncodedMultimodalImage>,
+}
+
+fn to_openai_user_content(content: String) -> async_openai::types::ChatCompletionRequestUserMessageContent {
+    use async_openai::types::{
+        ChatCompletionRequestMessageContentPartImage, ChatCompletionRequestMessageContentPartText,
+        ChatCompletionRequestUserMessageContent, ChatCompletionRequestUserMessageContentPart,
+        ImageUrl,
+    };
+
+    let Some(encoded_json) = content.strip_prefix(MULTIMODAL_MARKER) else {
+        return ChatCompletionRequestUserMessageContent::Text(content);
+    };
+
+    let Ok(decoded_input) = serde_json::from_str::<EncodedMultimodalInput>(encoded_json) else {
+        return ChatCompletionRequestUserMessageContent::Text(content);
+    };
+
+    let mut content_parts = Vec::<ChatCompletionRequestUserMessageContentPart>::new();
+
+    if !decoded_input.text.is_empty() {
+        content_parts.push(ChatCompletionRequestUserMessageContentPart::Text(
+            ChatCompletionRequestMessageContentPartText {
+                text: decoded_input.text,
+            },
+        ));
+    }
+
+    for image in decoded_input.images {
+        if image.data_url.trim().is_empty() {
+            continue;
+        }
+        content_parts.push(ChatCompletionRequestUserMessageContentPart::ImageUrl(
+            ChatCompletionRequestMessageContentPartImage {
+                image_url: ImageUrl {
+                    url: image.data_url,
+                    detail: None,
+                },
+            },
+        ));
+    }
+
+    if content_parts.is_empty() {
+        ChatCompletionRequestUserMessageContent::Text(String::new())
+    } else {
+        ChatCompletionRequestUserMessageContent::Array(content_parts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_openai::types::ChatCompletionRequestUserMessageContent;
+
+    #[test]
+    fn plain_text_stays_text() {
+        let content = to_openai_user_content("hello".to_string());
+        assert!(matches!(
+            content,
+            ChatCompletionRequestUserMessageContent::Text(text) if text == "hello"
+        ));
+    }
+
+    #[test]
+    fn multimodal_marker_converts_to_array() {
+        let payload = format!(
+            "{MULTIMODAL_MARKER}{{\"text\":\"inspect this image\",\"images\":[{{\"data_url\":\"data:image/png;base64,AAAA\"}}]}}"
+        );
+        let content = to_openai_user_content(payload);
+
+        match content {
+            ChatCompletionRequestUserMessageContent::Array(parts) => {
+                assert_eq!(parts.len(), 2);
+            }
+            _ => panic!("expected multimodal content array"),
+        }
     }
 }
