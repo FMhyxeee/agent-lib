@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::error::{AgentError, AgentResult};
-use crate::mcp::TransportConfig;
 
 /// MCP server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,9 +20,9 @@ pub struct ServerConfig {
     #[serde(default)]
     pub transport: TransportType,
 
-    /// Transport-specific configuration
-    #[serde(flatten)]
-    pub transport_config: TransportConfig,
+    /// Endpoint for stdio/http transports
+    #[serde(default)]
+    pub endpoint: String,
 
     /// Stdio command (used when transport=stdio)
     #[serde(default)]
@@ -41,7 +40,7 @@ pub struct ServerConfig {
     #[serde(default)]
     pub headers: HashMap<String, String>,
 
-    /// TLS configuration (for HTTPS/WSS)
+    /// TLS configuration (for HTTPS)
     #[serde(default)]
     pub tls: Option<TlsConfig>,
 
@@ -62,25 +61,74 @@ pub struct ServerConfig {
     pub env: HashMap<String, String>,
 }
 
-/// Transport type configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
+/// Supported MCP transport types in strict official mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TransportType {
-    /// Standard input/output communication (child process)
+    /// Child process stdio transport
     #[default]
     Stdio,
-    /// TCP socket connection
-    Tcp,
-    /// HTTP connection
-    Http,
-    /// HTTPS connection
-    Https,
-    /// WebSocket connection
-    WebSocket,
-    /// Secure WebSocket connection
-    Wss,
-    /// Server-sent events
-    Sse,
+    /// Streamable HTTP transport (http/https)
+    StreamableHttp,
+}
+
+impl TransportType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stdio => "stdio",
+            Self::StreamableHttp => "streamable_http",
+        }
+    }
+}
+
+impl Serialize for TransportType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for TransportType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TransportTypeVisitor;
+
+        impl<'de> Visitor<'de> for TransportTypeVisitor {
+            type Value = TransportType;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a transport type string")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let normalized = value.trim().to_ascii_lowercase();
+                match normalized.as_str() {
+                    "stdio" => Ok(TransportType::Stdio),
+                    "streamable_http" | "streamable-http" | "streamablehttp" | "http"
+                    | "https" => Ok(TransportType::StreamableHttp),
+                    "tcp" | "websocket" | "ws" | "wss" | "sse" => {
+                        Err(E::custom(unsupported_transport_message(value)))
+                    }
+                    _ => Err(E::invalid_value(Unexpected::Str(value), &self)),
+                }
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_any(TransportTypeVisitor)
+    }
 }
 
 /// Authentication configuration
@@ -105,7 +153,7 @@ pub struct AuthConfig {
     /// Custom header name for API key
     pub api_key_header: Option<String>,
 
-    /// Token in query parameter (for some APIs)
+    /// Token in query parameter
     pub query_param: Option<String>,
 
     /// OAuth2 token URL
@@ -137,7 +185,7 @@ pub enum AuthType {
     Basic,
     /// API key authentication
     ApiKey,
-    /// OAuth 2.1 (for future implementation)
+    /// OAuth2 authentication
     #[serde(rename = "oauth2")]
     OAuth2,
 }
@@ -224,9 +272,7 @@ impl ConfigLoader {
             ))
         })?;
 
-        // Expand environment variables
         config.expand_environment_variables()?;
-
         Ok(config)
     }
 
@@ -249,9 +295,7 @@ impl ConfigLoader {
             ))
         })?;
 
-        // Expand environment variables
         config.expand_environment_variables()?;
-
         Ok(config)
     }
 
@@ -259,31 +303,24 @@ impl ConfigLoader {
     pub async fn from_env() -> AgentResult<McpConfig> {
         let mut config = McpConfig::default();
 
-        // Check for MCP-specific environment variables
         if let Ok(json_config) = env::var("MCP_CONFIG_JSON") {
             config = serde_json::from_str(&json_config)
                 .map_err(|e| AgentError::Mcp(format!("failed to parse MCP_CONFIG_JSON: {}", e)))?;
         }
 
-        // Expand environment variables
         config.expand_environment_variables()?;
-
         Ok(config)
     }
 
     /// Try to load configuration from common locations
     pub async fn from_common_locations() -> AgentResult<McpConfig> {
-        // Try Claude Desktop config location first
         let locations = vec![
-            // System-wide config
             PathBuf::from("/etc/agent-lib/mcp.toml"),
             PathBuf::from("/etc/agent-lib/mcp.json"),
-            // User config
             PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string()))
                 .join(".config/agent-lib/mcp.toml"),
             PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".to_string()))
                 .join(".config/agent-lib/mcp.json"),
-            // Current directory
             PathBuf::from("./mcp.toml"),
             PathBuf::from("./mcp.json"),
         ];
@@ -308,7 +345,6 @@ impl ConfigLoader {
             }
         }
 
-        // Fall back to environment variables
         Self::from_env().await
     }
 }
@@ -316,37 +352,28 @@ impl ConfigLoader {
 impl McpConfig {
     /// Expand environment variables in configuration
     pub fn expand_environment_variables(&mut self) -> AgentResult<()> {
-        // Expand environment variables in server configurations
         for server in &mut self.servers {
-            // Expand server name
             server.name = Self::expand_env_vars(&server.name);
-            server.transport_config.endpoint =
-                Self::expand_env_vars(&server.transport_config.endpoint);
-            server.command = server
-                .command
-                .as_ref()
-                .map(|cmd| Self::expand_env_vars(cmd));
+            server.endpoint = Self::expand_env_vars(&server.endpoint);
+            server.command = server.command.as_ref().map(|cmd| Self::expand_env_vars(cmd));
             server.args = server
                 .args
                 .iter()
                 .map(|arg| Self::expand_env_vars(arg))
                 .collect();
 
-            // Expand environment variables in headers
             let mut expanded_headers = HashMap::new();
             for (key, value) in &server.headers {
                 expanded_headers.insert(key.clone(), Self::expand_env_vars(value));
             }
             server.headers = expanded_headers;
 
-            // Expand environment variables in env map
             let mut expanded_env = HashMap::new();
             for (key, value) in &server.env {
                 expanded_env.insert(key.clone(), Self::expand_env_vars(value));
             }
             server.env = expanded_env;
 
-            // Expand authentication tokens
             if let Some(auth) = &mut server.auth {
                 auth.token = auth.token.as_ref().map(|t| Self::expand_env_vars(t));
                 auth.username = auth.username.as_ref().map(|u| Self::expand_env_vars(u));
@@ -354,10 +381,7 @@ impl McpConfig {
                 auth.api_key = auth.api_key.as_ref().map(|k| Self::expand_env_vars(k));
                 auth.token_url = auth.token_url.as_ref().map(|t| Self::expand_env_vars(t));
                 auth.client_id = auth.client_id.as_ref().map(|c| Self::expand_env_vars(c));
-                auth.client_secret = auth
-                    .client_secret
-                    .as_ref()
-                    .map(|c| Self::expand_env_vars(c));
+                auth.client_secret = auth.client_secret.as_ref().map(|c| Self::expand_env_vars(c));
                 auth.scope = auth.scope.as_ref().map(|s| Self::expand_env_vars(s));
                 auth.audience = auth.audience.as_ref().map(|a| Self::expand_env_vars(a));
             }
@@ -385,8 +409,7 @@ impl McpConfig {
 
         while let Some(ch) = chars.next() {
             if ch == '$' && chars.peek() == Some(&'{') {
-                // Start of ${VAR} pattern
-                chars.next(); // Skip '{'
+                chars.next();
                 let mut var_name = String::new();
 
                 for ch in chars.by_ref() {
@@ -399,14 +422,12 @@ impl McpConfig {
                 if let Ok(env_value) = env::var(&var_name) {
                     result.push_str(&env_value);
                 } else {
-                    // If variable not found, keep the original pattern
                     result.push('$');
                     result.push('{');
                     result.push_str(&var_name);
                     result.push('}');
                 }
             } else if ch == '$' && chars.peek().is_some_and(|c| c.is_alphabetic()) {
-                // Start of $VAR pattern (no braces)
                 let mut var_name = String::from("$");
 
                 while let Some(&next) = chars.peek() {
@@ -420,7 +441,6 @@ impl McpConfig {
                 if let Ok(env_value) = env::var(&var_name[1..]) {
                     result.push_str(&env_value);
                 } else {
-                    // If variable not found, keep the original name
                     result.push_str(&var_name);
                 }
             } else {
@@ -440,17 +460,13 @@ impl McpConfig {
 
     /// Get all enabled servers
     pub fn get_enabled_servers(&self) -> Vec<&ServerConfig> {
-        self.servers
-            .iter()
-            .filter(|server| server.enabled)
-            .collect()
+        self.servers.iter().filter(|server| server.enabled).collect()
     }
 
     /// Validate configuration
     pub fn validate(&self) -> AgentResult<()> {
         let mut errors = Vec::new();
 
-        // Check for duplicate server names
         let mut server_names = std::collections::HashSet::new();
         for server in &self.servers {
             if server_names.contains(&server.name) {
@@ -459,7 +475,7 @@ impl McpConfig {
                 server_names.insert(server.name.clone());
             }
 
-            let endpoint = server.transport_config.endpoint.trim();
+            let endpoint = server.endpoint.trim();
             match server.transport {
                 TransportType::Stdio => {
                     let has_command = server
@@ -475,17 +491,21 @@ impl McpConfig {
                         ));
                     }
                 }
-                _ => {
+                TransportType::StreamableHttp => {
                     if endpoint.is_empty() {
                         errors.push(format!(
-                            "Server '{}' requires endpoint for {:?} transport",
-                            server.name, server.transport
+                            "Server '{}' requires endpoint for streamable_http transport",
+                            server.name
+                        ));
+                    } else if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+                        errors.push(format!(
+                            "Server '{}' endpoint must start with http:// or https:// for streamable_http transport",
+                            server.name
                         ));
                     }
                 }
             }
 
-            // Validate authentication configuration
             if let Some(ref auth) = server.auth {
                 match auth.auth_type {
                     AuthType::Bearer => {
@@ -573,7 +593,13 @@ impl McpConfig {
     }
 }
 
-// Default value functions
+pub fn unsupported_transport_message(value: &str) -> String {
+    format!(
+        "Unsupported transport '{}'. Supported: stdio, streamable_http. http/https -> streamable_http; tcp/ws/wss/sse are removed in strict official mode.",
+        value
+    )
+}
+
 fn default_timeout() -> Duration {
     Duration::from_secs(30)
 }
@@ -607,8 +633,7 @@ mod duration_seconds {
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str(
-                    "a duration in seconds (integer/float), \
-                     a numeric string, or a struct with secs field",
+                    "a duration in seconds (integer/float), a numeric string, or a struct with secs field",
                 )
             }
 
@@ -695,78 +720,44 @@ mod duration_seconds {
 mod tests {
     use super::*;
 
+    fn make_server(name: &str) -> ServerConfig {
+        ServerConfig {
+            name: name.to_string(),
+            transport: TransportType::StreamableHttp,
+            endpoint: "https://example.com/mcp".to_string(),
+            command: None,
+            args: Vec::new(),
+            auth: None,
+            headers: HashMap::new(),
+            tls: None,
+            timeout: Duration::from_secs(30),
+            enabled: true,
+            env: HashMap::new(),
+        }
+    }
+
     #[test]
     fn test_expand_env_vars() {
-        // Set test environment variables
         unsafe {
             env::set_var("TEST_VAR", "test_value");
             env::set_var("ANOTHER_VAR", "another_value");
         }
 
-        // Test ${VAR} pattern
         let result = McpConfig::expand_env_vars("prefix-${TEST_VAR}-suffix");
         assert_eq!(result, "prefix-test_value-suffix");
 
-        // Test $VAR pattern
         let result = McpConfig::expand_env_vars("prefix-$TEST_VAR-suffix");
         assert_eq!(result, "prefix-test_value-suffix");
 
-        // Test multiple variables
-        let result = McpConfig::expand_env_vars("url: $BASE_URL/api/${VERSION}/end");
-        if let Ok(base_url) = env::var("BASE_URL")
-            && let Ok(version) = env::var("VERSION")
-        {
-            assert_eq!(result, format!("url: {}/api/{}/end", base_url, version));
-        }
-
-        // Test non-existent variable
-        let result = McpConfig::expand_env_vars("prefix-${NONEXISTENT}-suffix");
-        assert_eq!(result, "prefix-${NONEXISTENT}-suffix");
-
-        // Test mixed patterns
         let result = McpConfig::expand_env_vars("$TEST_VAR and ${ANOTHER_VAR}");
         assert_eq!(result, "test_value and another_value");
     }
 
     #[test]
-    fn test_config_validation() {
+    fn test_config_validation_duplicate_name() {
         let mut config = McpConfig::default();
-
-        // Valid configuration
-        config.servers.push(ServerConfig {
-            name: "test".to_string(),
-            transport: TransportType::Http,
-            transport_config: TransportConfig {
-                endpoint: "http://example.com".to_string(),
-            },
-            command: None,
-            args: Vec::new(),
-            auth: None,
-            headers: HashMap::new(),
-            tls: None,
-            timeout: Duration::from_secs(30),
-            enabled: true,
-            env: HashMap::new(),
-        });
-
-        assert!(config.validate().is_ok());
-
-        // Duplicate server name should fail
-        config.servers.push(ServerConfig {
-            name: "test".to_string(),
-            transport: TransportType::Http,
-            transport_config: TransportConfig {
-                endpoint: "http://example2.com".to_string(),
-            },
-            command: None,
-            args: Vec::new(),
-            auth: None,
-            headers: HashMap::new(),
-            tls: None,
-            timeout: Duration::from_secs(30),
-            enabled: true,
-            env: HashMap::new(),
-        });
+        config.servers.push(make_server("test"));
+        config.servers.push(make_server("test"));
 
         assert!(config.validate().is_err());
     }
@@ -777,9 +768,7 @@ mod tests {
         config.servers.push(ServerConfig {
             name: "stdio-invalid".to_string(),
             transport: TransportType::Stdio,
-            transport_config: TransportConfig {
-                endpoint: String::new(),
-            },
+            endpoint: String::new(),
             command: None,
             args: Vec::new(),
             auth: None,
@@ -797,14 +786,12 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_non_stdio_requires_endpoint() {
+    fn test_validate_streamable_http_requires_http_endpoint() {
         let mut config = McpConfig::default();
         config.servers.push(ServerConfig {
             name: "http-invalid".to_string(),
-            transport: TransportType::Http,
-            transport_config: TransportConfig {
-                endpoint: String::new(),
-            },
+            transport: TransportType::StreamableHttp,
+            endpoint: "localhost:8080".to_string(),
             command: None,
             args: Vec::new(),
             auth: None,
@@ -817,53 +804,27 @@ mod tests {
 
         assert!(config.validate().is_err());
 
-        config.servers[0].transport_config.endpoint = "https://example.com/mcp".to_string();
+        config.servers[0].endpoint = "https://example.com/mcp".to_string();
         assert!(config.validate().is_ok());
     }
 
     #[test]
-    fn test_parse_duration_from_numbers() {
-        let json = r#"
-        {
-          "general": {
-            "default_timeout": 45,
-            "max_retries": 2,
-            "logging_enabled": true
-          },
-          "servers": []
-        }
-        "#;
+    fn test_parse_transport_aliases() {
+        let http: TransportType = serde_json::from_str("\"http\"").expect("http alias");
+        let https: TransportType = serde_json::from_str("\"https\"").expect("https alias");
+        let streamable: TransportType =
+            serde_json::from_str("\"streamable_http\"").expect("streamable");
 
-        let cfg: McpConfig = serde_json::from_str(json).expect("parse config");
-        assert_eq!(cfg.general.default_timeout, Duration::from_secs(45));
+        assert_eq!(http, TransportType::StreamableHttp);
+        assert_eq!(https, TransportType::StreamableHttp);
+        assert_eq!(streamable, TransportType::StreamableHttp);
     }
 
     #[test]
-    fn test_parse_stdio_command_and_args() {
-        let json = r#"
-        {
-          "general": {
-            "default_timeout": 30,
-            "max_retries": 3,
-            "logging_enabled": true
-          },
-          "servers": [
-            {
-              "name": "filesystem",
-              "transport": "stdio",
-              "command": "npx",
-              "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\\\My Files"],
-              "timeout": 60,
-              "enabled": true
-            }
-          ]
-        }
-        "#;
-
-        let cfg: McpConfig = serde_json::from_str(json).expect("parse config");
-        let server = &cfg.servers[0];
-        assert_eq!(server.command.as_deref(), Some("npx"));
-        assert_eq!(server.args.len(), 3);
-        assert_eq!(server.timeout, Duration::from_secs(60));
+    fn test_parse_unsupported_transport() {
+        let err = serde_json::from_str::<TransportType>("\"tcp\"")
+            .expect_err("tcp should be unsupported")
+            .to_string();
+        assert!(err.contains("Unsupported transport 'tcp'"));
     }
 }

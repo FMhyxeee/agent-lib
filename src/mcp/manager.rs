@@ -1,13 +1,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+
+use rmcp::model::Tool;
 use tokio::sync::Mutex;
 
 use crate::error::{AgentError, AgentResult};
-use crate::mcp::config::{ConfigLoader, McpConfig, ServerConfig};
-use crate::mcp::{EnhancedTransportConfig, McpClient, McpTool, McpTransport, TransportConfig};
+use crate::mcp::config::{
+    ConfigLoader, McpConfig, ServerConfig, TransportType, unsupported_transport_message,
+};
+use crate::mcp::McpClient;
 
-type ServerEntry = (Arc<McpClient>, Vec<McpTool>);
+type ServerEntry = (Arc<McpClient>, Vec<Tool>);
 type ServerMap = HashMap<String, ServerEntry>;
 
 /// Manages multiple MCP server connections
@@ -55,46 +59,12 @@ impl McpManager {
         &self,
         name: impl Into<String>,
         endpoint: impl Into<String>,
-    ) -> AgentResult<Vec<McpTool>> {
+    ) -> AgentResult<Vec<Tool>> {
         let name = name.into();
         let endpoint = endpoint.into();
-
-        let transport = McpTransport::new(TransportConfig { endpoint })
-            .await
-            .map_err(|err| {
-                AgentError::Mcp(format!(
-                    "failed to create transport for server '{}': {}",
-                    name, err
-                ))
-            })?;
-
-        let client = Arc::new(McpClient::new(transport));
-
-        let tools = match self.default_timeout {
-            Some(timeout) => {
-                // Use timeout (Codex pattern)
-                tokio::time::timeout(timeout, client.list_tools())
-                    .await
-                    .map_err(|_| {
-                        AgentError::Mcp(format!(
-                            "server '{}' timed out during tool discovery",
-                            name
-                        ))
-                    })?
-            }
-            None => client.list_tools().await,
-        }?;
-
-        let mut servers = self.servers.lock().await;
-        servers.insert(name.clone(), (client, tools.clone()));
-
-        tracing::info!(
-            "Connected to MCP server '{}' with {} tools",
-            name,
-            tools.len()
-        );
-
-        Ok(tools)
+        let timeout = self.default_timeout.unwrap_or(Duration::from_secs(30));
+        let config = Self::server_config_from_endpoint(name, endpoint, timeout)?;
+        self.add_server_with_config(config).await
     }
 
     /// Add an MCP server with custom timeout
@@ -103,46 +73,15 @@ impl McpManager {
         name: impl Into<String>,
         endpoint: impl Into<String>,
         timeout: Duration,
-    ) -> AgentResult<Vec<McpTool>> {
+    ) -> AgentResult<Vec<Tool>> {
         let name = name.into();
         let endpoint = endpoint.into();
-
-        let transport = McpTransport::new(TransportConfig { endpoint })
-            .await
-            .map_err(|err| {
-                AgentError::Mcp(format!(
-                    "failed to create transport for server '{}': {}",
-                    name, err
-                ))
-            })?;
-
-        let client = Arc::new(McpClient::new(transport));
-
-        let tools = tokio::time::timeout(timeout, client.list_tools())
-            .await
-            .map_err(|_| {
-                AgentError::Mcp(format!("server '{}' timed out after {:?}", name, timeout))
-            })?;
-
-        let tools = tools?;
-        let tools_count = tools.len();
-        let tools_clone = tools.clone();
-
-        let mut servers = self.servers.lock().await;
-        servers.insert(name.clone(), (client, tools));
-
-        tracing::info!(
-            "Connected to MCP server '{}' with {} tools (custom timeout: {:?})",
-            name,
-            tools_count,
-            timeout
-        );
-
-        Ok(tools_clone)
+        let config = Self::server_config_from_endpoint(name, endpoint, timeout)?;
+        self.add_server_with_config(config).await
     }
 
     /// Get all tools from all registered servers
-    pub async fn get_all_tools(&self) -> Vec<(String, McpTool, Arc<McpClient>)> {
+    pub async fn get_all_tools(&self) -> Vec<(String, Tool, Arc<McpClient>)> {
         let servers = self.servers.lock().await;
         let mut result = Vec::new();
 
@@ -162,7 +101,7 @@ impl McpManager {
     }
 
     /// Get tools for a specific server
-    pub async fn get_server_tools(&self, name: &str) -> Option<Vec<McpTool>> {
+    pub async fn get_server_tools(&self, name: &str) -> Option<Vec<Tool>> {
         let servers = self.servers.lock().await;
         servers.get(name).map(|(_, tools)| tools.clone())
     }
@@ -174,7 +113,7 @@ impl McpManager {
     }
 
     /// Remove a server by name
-    pub async fn remove_server(&self, name: &str) -> Option<(Arc<McpClient>, Vec<McpTool>)> {
+    pub async fn remove_server(&self, name: &str) -> Option<(Arc<McpClient>, Vec<Tool>)> {
         let mut servers = self.servers.lock().await;
         servers.remove(name)
     }
@@ -263,60 +202,55 @@ impl McpManager {
     }
 
     /// Add server with full configuration
-    pub async fn add_server_with_config(&self, config: ServerConfig) -> AgentResult<Vec<McpTool>> {
-        // Create enhanced transport configuration
-        let transport_config = self.create_enhanced_transport_config(&config).await?;
+    pub async fn add_server_with_config(&self, config: ServerConfig) -> AgentResult<Vec<Tool>> {
+        Self::validate_server_config(&config)?;
 
-        let transport = McpTransport::from_enhanced_config(transport_config)
-            .await
-            .map_err(|err| {
-                AgentError::Mcp(format!(
-                    "failed to create transport for server '{}': {}",
-                    config.name, err
-                ))
-            })?;
-
-        let client = Arc::new(McpClient::new(transport));
-
+        let server_name = config.name.clone();
         let timeout = config.timeout;
-        let tools = tokio::time::timeout(timeout, client.list_tools())
-            .await
-            .map_err(|_| {
-                AgentError::Mcp(format!(
-                    "server '{}' timed out during tool discovery",
-                    config.name
-                ))
-            })??;
+        let max_attempts = self.max_retries.saturating_add(1).max(1);
 
-        let mut servers = self.servers.lock().await;
-        servers.insert(config.name.clone(), (client, tools.clone()));
+        let client = Arc::new(McpClient::connect(config).await?);
 
-        tracing::info!(
-            "Added MCP server '{}' with {} tools from configuration",
-            config.name,
-            tools.len()
-        );
+        let mut last_error: Option<AgentError> = None;
+        for attempt in 1..=max_attempts {
+            match tokio::time::timeout(timeout, client.list_tools()).await {
+                Ok(Ok(tools)) => {
+                    let mut servers = self.servers.lock().await;
+                    servers.insert(server_name.clone(), (Arc::clone(&client), tools.clone()));
+                    tracing::info!(
+                        "Added MCP server '{}' with {} tools from configuration",
+                        server_name,
+                        tools.len()
+                    );
+                    return Ok(tools);
+                }
+                Ok(Err(err)) => {
+                    last_error = Some(err);
+                }
+                Err(_) => {
+                    last_error = Some(AgentError::Mcp(format!(
+                        "server '{}' timed out during tool discovery",
+                        server_name
+                    )));
+                }
+            }
 
-        Ok(tools)
-    }
+            if attempt < max_attempts {
+                tracing::warn!(
+                    "Retrying tool discovery for MCP server '{}' ({}/{})",
+                    server_name,
+                    attempt + 1,
+                    max_attempts
+                );
+            }
+        }
 
-    /// Create enhanced transport configuration with auth and headers
-    async fn create_enhanced_transport_config(
-        &self,
-        config: &ServerConfig,
-    ) -> AgentResult<EnhancedTransportConfig> {
-        Ok(EnhancedTransportConfig {
-            endpoint: config.transport_config.endpoint.clone(),
-            command: config.command.clone(),
-            args: config.args.clone(),
-            transport_type: config.transport.clone(),
-            auth: config.auth.clone(),
-            headers: config.headers.clone(),
-            env: config.env.clone(),
-            timeout: config.timeout,
-            max_retries: self.max_retries,
-            tls: config.tls.clone(),
-        })
+        Err(last_error.unwrap_or_else(|| {
+            AgentError::Mcp(format!(
+                "failed to discover tools for MCP server '{}'",
+                server_name
+            ))
+        }))
     }
 
     /// Reload configuration from file
@@ -341,7 +275,7 @@ impl McpManager {
     }
 
     /// Get all server information (name, client, tools)
-    pub async fn get_all_servers(&self) -> Vec<(String, Arc<McpClient>, Vec<McpTool>)> {
+    pub async fn get_all_servers(&self) -> Vec<(String, Arc<McpClient>, Vec<Tool>)> {
         let servers = self.servers.lock().await;
         servers
             .iter()
@@ -350,11 +284,67 @@ impl McpManager {
     }
 
     /// Get configuration for a specific server
-    pub async fn get_server_info(&self, name: &str) -> Option<(Arc<McpClient>, Vec<McpTool>)> {
+    pub async fn get_server_info(&self, name: &str) -> Option<(Arc<McpClient>, Vec<Tool>)> {
         let servers = self.servers.lock().await;
         servers
             .get(name)
             .map(|(client, tools)| (Arc::clone(client), tools.clone()))
+    }
+
+    fn validate_server_config(config: &ServerConfig) -> AgentResult<()> {
+        let validation = McpConfig {
+            general: Default::default(),
+            servers: vec![config.clone()],
+        };
+        validation.validate()
+    }
+
+    fn server_config_from_endpoint(
+        name: String,
+        endpoint: String,
+        timeout: Duration,
+    ) -> AgentResult<ServerConfig> {
+        let trimmed = endpoint.trim();
+        if trimmed.is_empty() {
+            return Err(AgentError::Mcp("endpoint cannot be empty".to_string()));
+        }
+
+        let transport = if trimmed.starts_with("stdio://") {
+            TransportType::Stdio
+        } else if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            TransportType::StreamableHttp
+        } else if let Some((scheme, _)) = trimmed.split_once("://") {
+            let normalized = scheme.to_ascii_lowercase();
+            if matches!(
+                normalized.as_str(),
+                "tcp" | "websocket" | "ws" | "wss" | "sse"
+            ) {
+                return Err(AgentError::Mcp(unsupported_transport_message(scheme)));
+            }
+            return Err(AgentError::Mcp(format!(
+                "Unsupported endpoint scheme '{}'. Supported endpoint prefixes: stdio://, http://, https://.",
+                scheme
+            )));
+        } else {
+            return Err(AgentError::Mcp(format!(
+                "Unsupported endpoint '{}'. Supported endpoint prefixes: stdio://, http://, https://.",
+                trimmed
+            )));
+        };
+
+        Ok(ServerConfig {
+            name,
+            transport,
+            endpoint: trimmed.to_string(),
+            command: None,
+            args: Vec::new(),
+            auth: None,
+            headers: HashMap::new(),
+            tls: None,
+            timeout,
+            enabled: true,
+            env: HashMap::new(),
+        })
     }
 }
 
@@ -406,5 +396,29 @@ mod tests {
         for handle in handles {
             handle.await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn test_add_server_rejects_legacy_transport_endpoint() {
+        let manager = McpManager::new();
+        let err = manager
+            .add_server("legacy", "tcp://localhost:9000")
+            .await
+            .expect_err("legacy transport must be rejected");
+
+        let message = err.to_string();
+        assert!(message.contains("Unsupported transport 'tcp'"));
+        assert!(message.contains("Supported: stdio, streamable_http"));
+    }
+
+    #[tokio::test]
+    async fn test_add_server_rejects_unknown_scheme() {
+        let manager = McpManager::new();
+        let err = manager
+            .add_server("unknown", "ftp://localhost/resource")
+            .await
+            .expect_err("unknown scheme must be rejected");
+
+        assert!(err.to_string().contains("Supported endpoint prefixes"));
     }
 }

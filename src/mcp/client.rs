@@ -1,169 +1,151 @@
-use serde_json::Value;
-use serde_json::json;
+use std::sync::Arc;
 use std::time::Duration;
 
-use crate::error::{AgentError, AgentResult};
-use crate::mcp::{
-    McpPrompt, McpPromptResult, McpRequest, McpResource, McpResourceContent, McpResponse, McpTool,
-    McpToolCall, McpTransport,
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult, Prompt,
+    ReadResourceRequestParams, ReadResourceResult, Resource, Tool,
 };
+use tokio::sync::Mutex;
 
-#[derive(Debug)]
+use crate::error::{AgentError, AgentResult};
+use crate::mcp::config::ServerConfig;
+use crate::mcp::transport::{RmcpClientService, connect_client};
+
+#[derive(Debug, Clone)]
 pub struct McpClient {
-    transport: McpTransport,
+    service: Arc<Mutex<RmcpClientService>>,
 }
 
 impl McpClient {
-    pub fn new(transport: McpTransport) -> Self {
-        Self { transport }
+    pub async fn connect(config: ServerConfig) -> AgentResult<Self> {
+        let service = connect_client(&config).await?;
+        Ok(Self {
+            service: Arc::new(Mutex::new(service)),
+        })
     }
 
-    pub async fn list_tools(&self) -> AgentResult<Vec<McpTool>> {
+    pub async fn list_tools(&self) -> AgentResult<Vec<Tool>> {
         self.list_tools_with_timeout(None).await
     }
 
-    pub async fn list_tools_with_timeout(
-        &self,
-        timeout: Option<Duration>,
-    ) -> AgentResult<Vec<McpTool>> {
-        let fut = self.list_tools_internal();
-
-        match timeout {
-            Some(duration) => tokio::time::timeout(duration, fut)
+    pub async fn list_tools_with_timeout(&self, timeout: Option<Duration>) -> AgentResult<Vec<Tool>> {
+        self.with_timeout(timeout, async {
+            let service = self.service.lock().await;
+            service
+                .list_all_tools()
                 .await
-                .map_err(|_| AgentError::Mcp(format!("timed out after {:?}", duration)))?,
-            None => fut.await,
-        }
+                .map_err(map_service_error)
+        })
+        .await
     }
 
-    /// List tools without timeout wrapper (for internal use)
-    async fn list_tools_internal(&self) -> AgentResult<Vec<McpTool>> {
-        let response = self
-            .send(McpRequest {
-                id: "tools.list".to_string(),
-                method: "tools/list".to_string(),
-                params: json!({}),
-            })
-            .await?;
-
-        let tools: Vec<McpTool> = serde_json::from_value(response.result)
-            .map_err(|err| AgentError::Mcp(format!("invalid tools list: {err}")))?;
-        Ok(tools)
-    }
-
-    pub async fn call_tool(&self, call: McpToolCall) -> AgentResult<Value> {
-        self.call_tool_with_timeout(call, None).await
+    pub async fn call_tool(&self, request: CallToolRequestParams) -> AgentResult<CallToolResult> {
+        self.call_tool_with_timeout(request, None).await
     }
 
     pub async fn call_tool_with_timeout(
         &self,
-        call: McpToolCall,
+        request: CallToolRequestParams,
         timeout: Option<Duration>,
-    ) -> AgentResult<Value> {
-        let fut = self.call_tool_internal(call);
-
-        match timeout {
-            Some(duration) => tokio::time::timeout(duration, fut).await.map_err(|_| {
-                AgentError::Mcp(format!("tool call timed out after {:?}", duration))
-            })?,
-            None => fut.await,
+    ) -> AgentResult<CallToolResult> {
+        if request.arguments.is_none() {
+            return Err(AgentError::Mcp(
+                "call_tool requires arguments object; pass Some(Default::default()) for empty arguments"
+                    .to_string(),
+            ));
         }
+
+        self.with_timeout(timeout, async {
+            let service = self.service.lock().await;
+            service.call_tool(request).await.map_err(map_service_error)
+        })
+        .await
     }
 
-    /// Call tool without timeout wrapper (for internal use)
-    async fn call_tool_internal(&self, call: McpToolCall) -> AgentResult<Value> {
-        let response = self
-            .send(McpRequest {
-                id: "tools.call".to_string(),
-                method: "tools/call".to_string(),
-                params: json!({
-                    "name": call.name,
-                    "args": call.args,
-                }),
-            })
-            .await?;
-
-        Ok(response.result)
+    pub async fn list_resources(&self) -> AgentResult<Vec<Resource>> {
+        self.list_resources_with_timeout(None).await
     }
 
-    async fn send(&self, _request: McpRequest) -> AgentResult<McpResponse> {
-        self.transport.send(_request).await
-    }
-
-    // === Resources (MCP 协议) ===
-
-    /// 列出所有可用资源
-    pub async fn list_resources(&self) -> AgentResult<Vec<McpResource>> {
-        let response = self
-            .send(McpRequest {
-                id: "resources.list".to_string(),
-                method: "resources/list".to_string(),
-                params: json!({}),
-            })
-            .await?;
-
-        let result = response.result;
-        let resources = serde_json::from_value::<Vec<McpResource>>(result)
-            .map_err(|err| AgentError::Mcp(format!("invalid resources list: {err}")))?;
-        Ok(resources)
-    }
-
-    /// 读取资源内容
-    pub async fn read_resource(&self, uri: String) -> AgentResult<McpResourceContent> {
-        let response = self
-            .send(McpRequest {
-                id: "resources.read".to_string(),
-                method: "resources/read".to_string(),
-                params: json!({ "uri": uri }),
-            })
-            .await?;
-
-        let result = response.result;
-        let content = serde_json::from_value::<McpResourceContent>(result)
-            .map_err(|err| AgentError::Mcp(format!("invalid resource content: {err}")))?;
-        Ok(content)
-    }
-
-    // === Prompts (MCP 协议) ===
-
-    /// 列出所有可用提示
-    pub async fn list_prompts(&self) -> AgentResult<Vec<McpPrompt>> {
-        let response = self
-            .send(McpRequest {
-                id: "prompts.list".to_string(),
-                method: "prompts/list".to_string(),
-                params: json!({}),
-            })
-            .await?;
-
-        let result = response.result;
-        let prompts = serde_json::from_value::<Vec<McpPrompt>>(result)
-            .map_err(|err| AgentError::Mcp(format!("invalid prompts list: {err}")))?;
-        Ok(prompts)
-    }
-
-    /// 获取提示内容
-    pub async fn get_prompt(
+    pub async fn list_resources_with_timeout(
         &self,
-        name: String,
-        arguments: Option<Value>,
-    ) -> AgentResult<McpPromptResult> {
-        let mut params = json!({ "name": name });
-        if let Some(args) = arguments {
-            params["arguments"] = args;
-        }
-
-        let response = self
-            .send(McpRequest {
-                id: "prompts.get".to_string(),
-                method: "prompts/get".to_string(),
-                params,
-            })
-            .await?;
-
-        let result = response.result;
-        let prompt_result = serde_json::from_value::<McpPromptResult>(result)
-            .map_err(|err| AgentError::Mcp(format!("invalid prompt result: {err}")))?;
-        Ok(prompt_result)
+        timeout: Option<Duration>,
+    ) -> AgentResult<Vec<Resource>> {
+        self.with_timeout(timeout, async {
+            let service = self.service.lock().await;
+            service
+                .list_all_resources()
+                .await
+                .map_err(map_service_error)
+        })
+        .await
     }
+
+    pub async fn read_resource(&self, request: ReadResourceRequestParams) -> AgentResult<ReadResourceResult> {
+        self.read_resource_with_timeout(request, None).await
+    }
+
+    pub async fn read_resource_with_timeout(
+        &self,
+        request: ReadResourceRequestParams,
+        timeout: Option<Duration>,
+    ) -> AgentResult<ReadResourceResult> {
+        self.with_timeout(timeout, async {
+            let service = self.service.lock().await;
+            service
+                .read_resource(request)
+                .await
+                .map_err(map_service_error)
+        })
+        .await
+    }
+
+    pub async fn list_prompts(&self) -> AgentResult<Vec<Prompt>> {
+        self.list_prompts_with_timeout(None).await
+    }
+
+    pub async fn list_prompts_with_timeout(
+        &self,
+        timeout: Option<Duration>,
+    ) -> AgentResult<Vec<Prompt>> {
+        self.with_timeout(timeout, async {
+            let service = self.service.lock().await;
+            service
+                .list_all_prompts()
+                .await
+                .map_err(map_service_error)
+        })
+        .await
+    }
+
+    pub async fn get_prompt(&self, request: GetPromptRequestParams) -> AgentResult<GetPromptResult> {
+        self.get_prompt_with_timeout(request, None).await
+    }
+
+    pub async fn get_prompt_with_timeout(
+        &self,
+        request: GetPromptRequestParams,
+        timeout: Option<Duration>,
+    ) -> AgentResult<GetPromptResult> {
+        self.with_timeout(timeout, async {
+            let service = self.service.lock().await;
+            service.get_prompt(request).await.map_err(map_service_error)
+        })
+        .await
+    }
+
+    async fn with_timeout<T, F>(&self, timeout: Option<Duration>, future: F) -> AgentResult<T>
+    where
+        F: std::future::Future<Output = AgentResult<T>>,
+    {
+        match timeout {
+            Some(duration) => tokio::time::timeout(duration, future)
+                .await
+                .map_err(|_| AgentError::Mcp(format!("timed out after {:?}", duration)))?,
+            None => future.await,
+        }
+    }
+}
+
+fn map_service_error(error: rmcp::service::ServiceError) -> AgentError {
+    AgentError::Mcp(error.to_string())
 }

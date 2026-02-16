@@ -486,8 +486,8 @@ async fn handle_list_mcp_tools(sess: &Session) {
         all_tools
             .into_iter()
             .map(|(server, tool, _client)| crate::protocol::McpToolInfo {
-                name: tool.name,
-                description: tool.description,
+                name: tool.name.to_string(),
+                description: tool.description.unwrap_or_default().to_string(),
                 server,
             })
             .collect()
@@ -1471,10 +1471,10 @@ async fn handle_list_mcp_resources(sess: &Session) {
                 Ok(resources) => {
                     for res in resources {
                         all_resources.push(crate::protocol::McpResourceInfo {
-                            uri: res.uri,
-                            name: res.name,
-                            description: res.description,
-                            mime_type: res.mime_type,
+                            uri: res.uri.clone(),
+                            name: res.name.clone(),
+                            description: res.description.clone(),
+                            mime_type: res.mime_type.clone(),
                         });
                     }
                 }
@@ -1507,11 +1507,37 @@ async fn handle_read_mcp_resource(sess: &Session, uri: String) {
     let server_name = uri.split_once(':').map(|(s, _)| s).unwrap_or("default");
 
     if let Some((client, _tools)) = manager.get_server_info(server_name).await {
-        match client.read_resource(uri.clone()).await {
-            Ok(content) => {
+        let request = crate::mcp::ReadResourceRequestParams {
+            meta: None,
+            uri: uri.clone(),
+        };
+
+        match client.read_resource(request).await {
+            Ok(result) => {
+                let resolved_uri = result
+                    .contents
+                    .first()
+                    .map(|entry| match entry {
+                        crate::mcp::ResourceContents::TextResourceContents { uri, .. }
+                        | crate::mcp::ResourceContents::BlobResourceContents { uri, .. } => {
+                            uri.clone()
+                        }
+                    })
+                    .unwrap_or_else(|| uri.clone());
+
+                let content = result
+                    .contents
+                    .into_iter()
+                    .map(|entry| match entry {
+                        crate::mcp::ResourceContents::TextResourceContents { text, .. } => text,
+                        crate::mcp::ResourceContents::BlobResourceContents { blob, .. } => blob,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
                 sess.emit_event(crate::protocol::Event::McpResourceContent {
-                    uri: content.uri,
-                    content: content.content,
+                    uri: resolved_uri,
+                    content,
                 })
                 .await;
             }
@@ -1564,7 +1590,7 @@ async fn handle_list_mcp_prompts(sess: &Session) {
                                     .map(|arg| crate::protocol::PromptArgumentInfo {
                                         name: arg.name,
                                         description: arg.description,
-                                        required: arg.required,
+                                        required: arg.required.unwrap_or(false),
                                     })
                                     .collect()
                             }),
@@ -1600,19 +1626,67 @@ async fn handle_get_mcp_prompt(sess: &Session, name: String, arguments: Option<s
     let (server_name, prompt_name) = name.split_once(':').unwrap_or(("default", name.as_str()));
 
     if let Some((client, _tools)) = manager.get_server_info(server_name).await {
-        match client.get_prompt(prompt_name.to_string(), arguments).await {
+        let prompt_arguments = match arguments {
+            Some(serde_json::Value::Object(arguments)) => Some(arguments),
+            Some(_) => {
+                sess.emit_event(crate::protocol::Event::Error {
+                    error: crate::error::AgentError::Tool(
+                        "Prompt arguments must be a JSON object".to_string(),
+                    ),
+                })
+                .await;
+                return;
+            }
+            None => None,
+        };
+
+        let request = crate::mcp::GetPromptRequestParams {
+            meta: None,
+            name: prompt_name.to_string(),
+            arguments: prompt_arguments,
+        };
+
+        match client.get_prompt(request).await {
             Ok(result) => {
                 let messages = result
                     .messages
                     .into_iter()
                     .map(|msg| crate::protocol::PromptMessage {
-                        role: msg.role,
+                        role: match msg.role {
+                            crate::mcp::PromptMessageRole::User => "user".to_string(),
+                            crate::mcp::PromptMessageRole::Assistant => "assistant".to_string(),
+                        },
                         content: match msg.content {
-                            crate::mcp::McpPromptContent::Text { text } => {
+                            crate::mcp::PromptMessageContent::Text { text } => {
                                 crate::protocol::PromptContent::Text { text }
                             }
-                            crate::mcp::McpPromptContent::Image { data, mime_type } => {
-                                crate::protocol::PromptContent::Image { data, mime_type }
+                            crate::mcp::PromptMessageContent::Image { image } => {
+                                crate::protocol::PromptContent::Image {
+                                    data: image.data.clone(),
+                                    mime_type: image.mime_type.clone(),
+                                }
+                            }
+                            crate::mcp::PromptMessageContent::Resource { resource } => {
+                                let text = match &resource.resource {
+                                    crate::mcp::ResourceContents::TextResourceContents {
+                                        uri, text, ..
+                                    } => {
+                                        if text.is_empty() {
+                                            uri.clone()
+                                        } else {
+                                            text.clone()
+                                        }
+                                    }
+                                    crate::mcp::ResourceContents::BlobResourceContents {
+                                        uri, ..
+                                    } => uri.clone(),
+                                };
+                                crate::protocol::PromptContent::Text { text }
+                            }
+                            crate::mcp::PromptMessageContent::ResourceLink { link } => {
+                                crate::protocol::PromptContent::Text {
+                                    text: link.uri.clone(),
+                                }
                             }
                         },
                     })

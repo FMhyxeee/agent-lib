@@ -26,8 +26,12 @@ pub use token::{TokenCounter, TruncationMode, TruncationPolicy, count_tokens};
 
 // Re-export MCP types for convenience
 pub use mcp::{
-    McpClient, McpManager, McpRequest, McpResponse, McpTool, McpToolCall, McpTransport,
-    TransportConfig,
+    AuthConfig, AuthType, CallToolRequestParams, CallToolResult, ConfigLoader,
+    GetPromptRequestParams, GetPromptResult, McpClient, McpConfig, McpManager,
+    PaginatedRequestParams, Prompt, PromptArgument, PromptMessage, PromptMessageContent,
+    PromptMessageRole,
+    ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, ServerConfig,
+    TlsConfig, Tool, TransportType,
 };
 
 // Re-export Codex-compatible protocol types

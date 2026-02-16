@@ -8,6 +8,7 @@ use agent_lib::tools::{ApprovalDecision, ApprovalHook};
 use agent_lib::{AgentBuilder, AgentResult};
 use async_trait::async_trait;
 use serde_json::Value;
+use std::time::Duration;
 
 /// Simple approval hook that allows all tool calls
 struct AllowAllApproval;
@@ -51,24 +52,36 @@ async fn run_basic_example() -> AgentResult<()> {
 /// Alternative example using a pre-configured MCP client
 #[allow(dead_code)]
 async fn example_with_client() -> AgentResult<()> {
-    use agent_lib::mcp::{McpClient, McpTransport, TransportConfig};
+    use agent_lib::mcp::{McpClient, ServerConfig, TransportType};
     use std::sync::Arc;
 
     println!("=== Agent with MCP Client Example ===\n");
 
     // Manually create and configure MCP client
-    let transport = McpTransport::new(TransportConfig {
+    let config = ServerConfig {
+        name: "filesystem".to_string(),
+        transport: TransportType::Stdio,
         endpoint: "stdio://mcp-server-filesystem".to_string(),
-    })
-    .await?;
-
-    let client = Arc::new(McpClient::new(transport));
+        command: None,
+        args: Vec::new(),
+        auth: None,
+        headers: Default::default(),
+        tls: None,
+        timeout: Duration::from_secs(30),
+        enabled: true,
+        env: Default::default(),
+    };
+    let client = Arc::new(McpClient::connect(config).await?);
 
     // Inspect available tools before building agent
     let tools = client.list_tools().await?;
     println!("Available MCP tools: {}", tools.len());
     for tool in &tools {
-        println!("  - {}: {}", tool.name, tool.description);
+        println!(
+            "  - {}: {}",
+            tool.name,
+            tool.description.as_deref().unwrap_or_default()
+        );
     }
 
     if tools.is_empty() {
@@ -111,12 +124,15 @@ async fn example_multiple_servers() -> AgentResult<()> {
         }
     }
 
-    match manager.add_server("database", "tcp://localhost:5432").await {
+    match manager
+        .add_server("search", "https://example.com/mcp")
+        .await
+    {
         Ok(tools) => {
-            println!("Added database server with {} tools", tools.len());
+            println!("Added search server with {} tools", tools.len());
         }
         Err(err) => {
-            println!("Failed to add database server: {}", err);
+            println!("Failed to add search server: {}", err);
         }
     }
 
@@ -138,21 +154,13 @@ async fn example_multiple_servers() -> AgentResult<()> {
 fn show_transport_examples() {
     println!("=== Supported MCP Transports ===\n");
 
-    println!("All transport types are supported:");
+    println!("Strict official transport mode:");
     println!("  # Stdio (spawn subprocess)");
     println!("  .with_mcp_server(\"stdio://mcp-server-filesystem\").await");
     println!();
-    println!("  # TCP");
-    println!("  .with_mcp_server(\"tcp://localhost:8080\").await");
-    println!();
-    println!("  # HTTP");
+    println!("  # Streamable HTTP");
     println!("  .with_mcp_server(\"http://localhost:9000/mcp\").await");
     println!("  .with_mcp_server(\"https://api.example.com/mcp\").await");
-    println!();
-    println!("  # WebSocket");
-    println!("  .with_mcp_server(\"ws://localhost:9000/ws\").await");
-    println!("  .with_mcp_server(\"wss://api.example.com/ws\").await");
-    println!();
 }
 
 /// Main function demonstrating all examples
