@@ -35,10 +35,29 @@ fn read_env_var(file: &str, key: &str) -> Result<String, Box<dyn std::error::Err
     Err(format!("{} not found in {}", key, file).into())
 }
 
+fn load_glm_api_key() -> Option<String> {
+    if let Ok(value) = std::env::var("GLM_API_KEY") {
+        if !value.trim().is_empty() {
+            return Some(value);
+        }
+    }
+
+    if let Ok(value) = read_env_var(".env", "GLM_API_KEY") {
+        if !value.trim().is_empty() {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
 #[tokio::test]
 async fn e2e_code_review_assistant_scenario() {
     // === Setup ===
-    let api_key = read_env_var(".env", "GLM_API_KEY").expect("GLM_API_KEY required");
+    let Some(api_key) = load_glm_api_key() else {
+        eprintln!("Skipping e2e_code_review_assistant_scenario: GLM_API_KEY not configured");
+        return;
+    };
 
     // 使用 GLM Coding Plan Provider (需要单独订阅 https://www.bigmodel.cn/glm-coding)
     let provider = GlmCodingPlanProvider::new("glm-5", &api_key);

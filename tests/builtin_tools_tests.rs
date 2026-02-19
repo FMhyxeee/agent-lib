@@ -53,7 +53,7 @@ async fn test_shell_tool_exec() {
     };
 
     let command = if cfg!(windows) {
-        "Write-Output hello"
+        "echo hello"
     } else {
         "echo hello"
     };

@@ -11,8 +11,9 @@ pub mod tools;
 pub mod trace;
 
 pub use agent::{
-    Agent, AgentBuilder, AgentConfig, AgentRegistry, HandoffReceiver, Orchestrator,
-    global_agent_registry,
+    Agent, AgentBuilder, AgentConfig, AgentRegistry, AgentRole, BranchResult, HandoffReceiver,
+    OrchestrationArtifact, OrchestrationHistoryEntry, OrchestrationRequest, OrchestrationResult,
+    OrchestrationTimings, Orchestrator, OrchestratorOptions, StepStatus, global_agent_registry,
 };
 pub use error::{AgentError, AgentResult};
 pub use protocol::{Event, Op};
@@ -29,9 +30,8 @@ pub use mcp::{
     AuthConfig, AuthType, CallToolRequestParams, CallToolResult, ConfigLoader,
     GetPromptRequestParams, GetPromptResult, McpClient, McpConfig, McpManager,
     PaginatedRequestParams, Prompt, PromptArgument, PromptMessage, PromptMessageContent,
-    PromptMessageRole,
-    ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, ServerConfig,
-    TlsConfig, Tool, TransportType,
+    PromptMessageRole, ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
+    ServerConfig, TlsConfig, Tool, TransportType,
 };
 
 // Re-export Codex-compatible protocol types

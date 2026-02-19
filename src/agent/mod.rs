@@ -1,7 +1,7 @@
 mod config;
 mod definition;
-mod handoff;
 mod mcp_integration;
+mod orchestration;
 mod orchestrator;
 mod registry;
 
@@ -17,7 +17,11 @@ use crate::tools::{ApprovalHook, Tool, ToolExecutor, ToolRegistry};
 
 pub use config::AgentConfig;
 pub use definition::AgentDefinition;
-pub use handoff::HandoffManager;
+pub use orchestration::{
+    AgentRole, BranchResult, OrchestrationArtifact, OrchestrationHistoryEntry,
+    OrchestrationRequest, OrchestrationResult, OrchestrationTimings, OrchestratorOptions,
+    StepStatus,
+};
 pub use orchestrator::Orchestrator;
 pub use registry::{AgentRegistry, HandoffReceiver, global_agent_registry};
 
