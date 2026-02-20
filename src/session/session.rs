@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc};
@@ -89,6 +90,7 @@ struct SessionArc {
     event_sender: mpsc::Sender<Event>,
     model: Option<Arc<dyn ModelClient>>,
     tool_executor: Option<Arc<ToolExecutor>>,
+    default_cwd: Option<String>,
 }
 
 async fn emit_context_compacted(event_sender: &mpsc::Sender<Event>) {
@@ -97,6 +99,42 @@ async fn emit_context_compacted(event_sender: &mpsc::Sender<Event>) {
             compacted_items: vec![],
         })
         .await;
+}
+
+fn normalize_default_cwd(cwd: Option<&str>) -> Option<String> {
+    let cwd = cwd?.trim();
+    if cwd.is_empty() {
+        return None;
+    }
+
+    let input = PathBuf::from(cwd);
+    let absolute = if input.is_absolute() {
+        input
+    } else if let Ok(current_dir) = std::env::current_dir() {
+        current_dir.join(input)
+    } else {
+        input
+    };
+
+    Some(normalize_path(&absolute).to_string_lossy().to_string())
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => result.push(prefix.as_os_str()),
+            Component::RootDir => result.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                result.pop();
+            }
+            Component::Normal(part) => result.push(part),
+        }
+    }
+    result
 }
 
 #[async_trait::async_trait]
@@ -160,9 +198,10 @@ impl TaskSession for SessionArc {
     ) -> AgentResult<crate::tools::ToolResult> {
         if let Some(executor) = &self.tool_executor {
             use crate::tools::ToolContext;
+            let normalized_cwd = normalize_default_cwd(self.default_cwd.as_deref());
             let ctx = ToolContext {
-                cwd: None,
-                sandbox_root: None,
+                cwd: normalized_cwd.clone(),
+                sandbox_root: normalized_cwd,
             };
             executor.execute(name, args, &ctx).await
         } else {
@@ -447,6 +486,7 @@ impl Session {
             event_sender: self.event_sender.clone(),
             model: self.model.clone(),
             tool_executor: self.tool_executor.clone(),
+            default_cwd: self.config.default_cwd.clone(),
         });
 
         tokio::spawn({
@@ -638,6 +678,85 @@ impl Session {
         } else {
             Err(AgentError::Session("No undo history available".to_string()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{Tool, ToolContext, ToolDef, ToolRegistry, ToolResult};
+    use async_trait::async_trait;
+    use serde_json::json;
+
+    #[derive(Debug, Default)]
+    struct InspectContextTool;
+
+    #[async_trait]
+    impl Tool for InspectContextTool {
+        fn definition(&self) -> ToolDef {
+            ToolDef {
+                name: "inspect_context".to_string(),
+                description: "Return tool context".to_string(),
+                schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            }
+        }
+
+        async fn execute(
+            &self,
+            _args: serde_json::Value,
+            ctx: &ToolContext,
+        ) -> AgentResult<ToolResult> {
+            Ok(ToolResult {
+                output: json!({
+                    "cwd": ctx.cwd,
+                    "sandbox_root": ctx.sandbox_root,
+                }),
+            })
+        }
+    }
+
+    #[test]
+    fn normalize_default_cwd_converts_relative_path_to_absolute_path() {
+        let normalized = normalize_default_cwd(Some(".")).expect("expected normalized cwd");
+        assert!(Path::new(&normalized).is_absolute());
+    }
+
+    #[tokio::test]
+    async fn execute_tool_sets_sandbox_root_from_normalized_default_cwd() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(InspectContextTool));
+        let executor = Arc::new(ToolExecutor::new(registry));
+
+        let (event_sender, _event_receiver) = mpsc::channel(4);
+        let session = SessionArc {
+            history: Arc::new(Mutex::new(ConversationHistory::new())),
+            event_sender,
+            model: None,
+            tool_executor: Some(executor),
+            default_cwd: Some(".".to_string()),
+        };
+
+        let result = session
+            .execute_tool("inspect_context", json!({}))
+            .await
+            .expect("inspect_context should execute");
+
+        let cwd = result
+            .output
+            .get("cwd")
+            .and_then(|value| value.as_str())
+            .expect("cwd should be a string");
+        let sandbox_root = result
+            .output
+            .get("sandbox_root")
+            .and_then(|value| value.as_str())
+            .expect("sandbox_root should be a string");
+
+        assert_eq!(cwd, sandbox_root);
+        assert!(Path::new(cwd).is_absolute());
     }
 }
 
