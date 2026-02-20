@@ -19,6 +19,30 @@ pub struct RegularTask;
 /// 最大工具调用循环次数，防止无限循环
 const MAX_TOOL_CALL_LOOPS: usize = 10;
 
+fn build_messages_for_model(
+    history: &crate::session::ConversationHistory,
+    ctx: &TurnContext,
+) -> Vec<Message> {
+    let mut messages = Vec::new();
+
+    if let Some(developer_instructions) = ctx.developer_instructions.as_ref() {
+        let trimmed = developer_instructions.trim();
+        if !trimmed.is_empty() {
+            messages.push(Message::system(trimmed.to_string()));
+        }
+    }
+
+    if let Some(user_instructions) = ctx.user_instructions.as_ref() {
+        let trimmed = user_instructions.trim();
+        if !trimmed.is_empty() {
+            messages.push(Message::system(trimmed.to_string()));
+        }
+    }
+
+    messages.extend(history.for_prompt());
+    messages
+}
+
 #[async_trait]
 impl SessionTask for RegularTask {
     fn kind(&self) -> TaskKind {
@@ -75,7 +99,7 @@ impl SessionTask for RegularTask {
         }
 
         // 3. 准备模型调用
-        let messages = history.for_prompt();
+        let messages = build_messages_for_model(&history, ctx.as_ref());
 
         if messages.is_empty() {
             debug!("[{}] No messages to send to model", turn_id);
@@ -324,5 +348,41 @@ impl SessionTask for RegularTask {
             final_content.len(),
             loop_count
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_messages_for_model_prepends_prompt_directives() {
+        let mut history = crate::session::ConversationHistory::new();
+        history.push(Message::user("user message"));
+
+        let mut ctx = TurnContext::default();
+        ctx.developer_instructions = Some("developer instructions".to_string());
+        ctx.user_instructions = Some("user instructions".to_string());
+
+        let messages = build_messages_for_model(&history, &ctx);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].role, crate::model::MessageRole::System);
+        assert_eq!(messages[0].content, "developer instructions");
+        assert_eq!(messages[1].role, crate::model::MessageRole::System);
+        assert_eq!(messages[1].content, "user instructions");
+        assert_eq!(messages[2].role, crate::model::MessageRole::User);
+    }
+
+    #[test]
+    fn build_messages_for_model_keeps_history_when_no_directives() {
+        let mut history = crate::session::ConversationHistory::new();
+        history.push(Message::assistant("assistant message"));
+
+        let ctx = TurnContext::default();
+        let messages = build_messages_for_model(&history, &ctx);
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, crate::model::MessageRole::Assistant);
+        assert_eq!(messages[0].content, "assistant message");
     }
 }

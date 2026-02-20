@@ -89,6 +89,7 @@ async fn e2e_code_review_assistant_scenario() {
             },
             final_output_json_schema: None,
             collaboration_mode: Some(CollaborationMode::Solo),
+            prompt_directives: None,
         })
         .await
         .expect("Failed to submit UserTurn");

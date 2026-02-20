@@ -64,6 +64,7 @@ async fn test_op_serialization() {
         },
         final_output_json_schema: None,
         collaboration_mode: Some(CollaborationMode::Solo),
+        prompt_directives: None,
     };
 
     let json = serde_json::to_string(&op).unwrap();

@@ -10,6 +10,7 @@ pub use queue::{EventQueue, SubmissionQueue};
 pub use types::{
     ApprovalPolicy, CollaborationMode, CompactedItem, CustomPromptInfo, McpPromptInfo,
     McpResourceInfo, McpServerRefreshConfig, McpToolInfo, ModelInfo, PromptArgumentInfo,
-    PromptContent, PromptMessage, ReasoningEffort, ReasoningSummary, ReviewDecision, ReviewRequest,
-    SandboxPolicy, SkillEntry, TurnAbortReason, UserInputItem, UserInputResponse,
+    PromptContent, PromptDirectives, PromptMessage, ReasoningEffort, ReasoningSummary,
+    ReviewDecision, ReviewRequest, SandboxPolicy, SkillEntry, TurnAbortReason, UserInputItem,
+    UserInputResponse,
 };

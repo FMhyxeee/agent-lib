@@ -44,6 +44,16 @@ pub struct ReasoningSummary {
     pub token_count: usize,
 }
 
+/// Prompt 鎸囦护 - 鐢ㄤ簬姣忎竴杞殑绯荤粺绾ф彁绀鸿緭鍏?
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptDirectives {
+    #[serde(default)]
+    pub developer_instructions: Option<String>,
+    #[serde(default)]
+    pub user_instructions: Option<String>,
+}
+
 /// 审查决定 - 用户对工具调用的批准决定
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ReviewDecision {
@@ -283,6 +293,20 @@ mod tests {
         };
         assert_eq!(summary.summary, "test summary");
         assert_eq!(summary.token_count, 100);
+    }
+
+    #[test]
+    fn test_prompt_directives_default() {
+        let directives = PromptDirectives::default();
+        assert!(directives.developer_instructions.is_none());
+        assert!(directives.user_instructions.is_none());
+    }
+
+    #[test]
+    fn test_prompt_directives_serde_defaults() {
+        let directives: PromptDirectives = serde_json::from_str("{}").unwrap();
+        assert!(directives.developer_instructions.is_none());
+        assert!(directives.user_instructions.is_none());
     }
 
     #[test]

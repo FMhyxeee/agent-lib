@@ -40,8 +40,8 @@ pub use mcp::{
 // Re-export Codex-compatible protocol types
 pub use protocol::{
     ApprovalPolicy, CollaborationMode, CompactedItem, CustomPromptInfo, McpServerRefreshConfig,
-    McpToolInfo, ReasoningEffort, ReasoningSummary, ReviewDecision, ReviewRequest, SandboxPolicy,
-    SkillEntry, TurnAbortReason, UserInputItem, UserInputResponse,
+    McpToolInfo, PromptDirectives, ReasoningEffort, ReasoningSummary, ReviewDecision,
+    ReviewRequest, SandboxPolicy, SkillEntry, TurnAbortReason, UserInputItem, UserInputResponse,
 };
 
 pub use skills::{Skill, SkillConfig, SkillLoader, SkillMetadata, SkillRegistry, SkillSource};

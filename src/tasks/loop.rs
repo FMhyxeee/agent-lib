@@ -307,7 +307,18 @@ async fn handle_user_input_or_turn(
             summary,
             final_output_json_schema,
             collaboration_mode,
+            prompt_directives,
         } => {
+            let (directive_developer_instructions, directive_user_instructions) =
+                if let Some(directives) = prompt_directives {
+                    (
+                        directives.developer_instructions,
+                        directives.user_instructions,
+                    )
+                } else {
+                    (None, None)
+                };
+
             // 更新上下文
             let base_ctx = &(*ctx);
             let new_ctx = crate::session::TurnContext {
@@ -331,8 +342,10 @@ async fn handle_user_input_or_turn(
                     None => base_ctx.reasoning_effort,
                 },
                 reasoning_summary: Some(summary),
-                user_instructions: base_ctx.user_instructions.clone(),
-                developer_instructions: base_ctx.developer_instructions.clone(),
+                user_instructions: directive_user_instructions
+                    .or(base_ctx.user_instructions.clone()),
+                developer_instructions: directive_developer_instructions
+                    .or(base_ctx.developer_instructions.clone()),
                 final_output_json_schema: final_output_json_schema
                     .or(base_ctx.final_output_json_schema.clone()),
                 truncation_policy: base_ctx.truncation_policy.clone(),

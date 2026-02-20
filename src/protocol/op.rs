@@ -3,8 +3,8 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::protocol::{
-    CollaborationMode, McpServerRefreshConfig, ReasoningEffort, ReasoningSummary, ReviewDecision,
-    ReviewRequest, UserInputItem, UserInputResponse,
+    CollaborationMode, McpServerRefreshConfig, PromptDirectives, ReasoningEffort, ReasoningSummary,
+    ReviewDecision, ReviewRequest, UserInputItem, UserInputResponse,
 };
 use crate::session::TurnContext;
 
@@ -25,6 +25,7 @@ pub fn user_turn(items: Vec<UserInputItem>, model: impl Into<String>) -> Op {
         },
         final_output_json_schema: None,
         collaboration_mode: None,
+        prompt_directives: None,
     }
 }
 
@@ -49,6 +50,7 @@ pub fn user_turn_with_config(
         },
         final_output_json_schema: None,
         collaboration_mode: None,
+        prompt_directives: None,
     }
 }
 
@@ -133,6 +135,8 @@ pub enum Op {
         summary: ReasoningSummary,
         final_output_json_schema: Option<Value>,
         collaboration_mode: Option<CollaborationMode>,
+        #[serde(default)]
+        prompt_directives: Option<PromptDirectives>,
     },
 
     /// 遗留用户输入（向后兼容）
