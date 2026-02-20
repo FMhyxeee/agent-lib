@@ -8,6 +8,7 @@ Core, non-UI agent library in Rust. Provides:
 - **Model Client Abstraction** - OpenAI, GLM, and extensible provider support
 - **Tools Registry** - Approval hooks, allow/deny lists, sandboxed filesystem tool
 - **MCP Integration** - Multi-server manager with stdio/tcp/http/ws transports
+- **Governance Adapter** - Optional preflight/postrun governance injection for multi-agent runs
 - **SessionBuilder Pattern** - Fluent API for configuration
 - **Advanced Features** - Token counting, history compression, task cancellation
 
@@ -152,6 +153,39 @@ mcp_manager.register_server("brave-search", &config)?;
 ### Automatic Failover
 
 Transports support health monitoring and automatic failover between endpoints.
+
+## Multi-Agent Governance Adapter
+
+`Orchestrator` remains the delivery pipeline (`planner -> worker(s) -> reviewer`).
+`GovernedOrchestrator` is an optional outer adapter for governance preflight/postrun context injection.
+
+```rust
+use agent_lib::{
+    GovernedOrchestrator, GovernanceInjectionIssue, GovernanceInjectionRequest,
+    GovernanceInjectionSeverity, OrchestrationRequest, Orchestrator,
+};
+
+let orchestrator = Orchestrator::new(definitions, runners, Default::default())?;
+let governed = GovernedOrchestrator::new(orchestrator);
+
+let result = governed
+    .execute(
+        OrchestrationRequest::new("implement governance-aware workflow"),
+        Some(GovernanceInjectionRequest {
+            preflight_summary: Some("Config scan found 1 warning".to_string()),
+            issues: vec![GovernanceInjectionIssue {
+                severity: GovernanceInjectionSeverity::Warning,
+                code: "mcp.legacy_transport".to_string(),
+                message: "Legacy MCP transport detected".to_string(),
+            }],
+        }),
+    )
+    .await?;
+
+println!("final output: {}", result.orchestration.final_output);
+```
+
+If governance input is not provided, behavior is equivalent to `Orchestrator::execute`.
 
 ## Features
 
