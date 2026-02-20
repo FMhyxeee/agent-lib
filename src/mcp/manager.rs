@@ -6,10 +6,10 @@ use rmcp::model::Tool;
 use tokio::sync::Mutex;
 
 use crate::error::{AgentError, AgentResult};
+use crate::mcp::McpClient;
 use crate::mcp::config::{
     ConfigLoader, McpConfig, ServerConfig, TransportType, unsupported_transport_message,
 };
-use crate::mcp::McpClient;
 
 type ServerEntry = (Arc<McpClient>, Vec<Tool>);
 type ServerMap = HashMap<String, ServerEntry>;

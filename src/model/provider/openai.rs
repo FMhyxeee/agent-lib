@@ -334,7 +334,9 @@ struct EncodedMultimodalInput {
     images: Vec<EncodedMultimodalImage>,
 }
 
-fn to_openai_user_content(content: String) -> async_openai::types::ChatCompletionRequestUserMessageContent {
+fn to_openai_user_content(
+    content: String,
+) -> async_openai::types::ChatCompletionRequestUserMessageContent {
     use async_openai::types::{
         ChatCompletionRequestMessageContentPartImage, ChatCompletionRequestMessageContentPartText,
         ChatCompletionRequestUserMessageContent, ChatCompletionRequestUserMessageContentPart,

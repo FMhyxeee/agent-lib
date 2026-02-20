@@ -94,3 +94,38 @@ pub struct OrchestrationResult {
     pub artifacts: Vec<OrchestrationArtifact>,
     pub timings: OrchestrationTimings,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GovernanceInjectionSeverity {
+    Blocker,
+    Warning,
+    Info,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GovernanceInjectionIssue {
+    pub severity: GovernanceInjectionSeverity,
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GovernanceInjectionRequest {
+    pub preflight_summary: Option<String>,
+    #[serde(default)]
+    pub issues: Vec<GovernanceInjectionIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GovernanceInjectionResult {
+    pub preflight_applied: bool,
+    pub preflight_context: Option<String>,
+    pub postrun_applied: bool,
+    pub postrun_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GovernedOrchestrationResult {
+    pub orchestration: OrchestrationResult,
+    pub governance: GovernanceInjectionResult,
+}

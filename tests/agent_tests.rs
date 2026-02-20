@@ -10,7 +10,8 @@ use tokio::time::sleep;
 use agent_lib::agent::{AgentDefinition, AgentRole, AgentRunner, HandoffReceiver};
 use agent_lib::model::{Message, ModelClient, ModelResponse, StreamChunk, TokenUsage};
 use agent_lib::{
-    AgentBuilder, AgentError, AgentRegistry, AgentResult, OrchestrationRequest, Orchestrator,
+    AgentBuilder, AgentError, AgentRegistry, AgentResult, GovernanceInjectionRequest,
+    GovernanceInjectionSeverity, GovernedOrchestrator, OrchestrationRequest, Orchestrator,
     OrchestratorOptions, StepStatus,
 };
 
@@ -95,6 +96,31 @@ impl AgentRunner for ScenarioRunner {
             }
             (_, "reviewer") => Ok("reviewer merged output".to_string()),
             _ => Err(AgentError::InvalidConfig("unknown test runner".to_string())),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PromptEchoRunner {
+    name: String,
+    prompts: Arc<Mutex<HashMap<String, String>>>,
+}
+
+#[async_trait]
+impl AgentRunner for PromptEchoRunner {
+    async fn run(&self, prompt: &str) -> AgentResult<String> {
+        self.prompts
+            .lock()
+            .await
+            .insert(self.name.clone(), prompt.to_string());
+
+        match self.name.as_str() {
+            "planner" => Ok("planner output".to_string()),
+            "worker_a" | "worker_b" | "worker_c" => Ok(format!("{} output", self.name)),
+            "reviewer" => Ok(prompt.to_string()),
+            _ => Err(AgentError::InvalidConfig(
+                "unknown prompt echo runner".to_string(),
+            )),
         }
     }
 }
@@ -217,6 +243,59 @@ async fn test_orchestrator_reviewer_failure_fallback() {
             .final_output
             .contains("Reviewer failed. Returning deterministic fallback summary.")
     );
+}
+
+#[tokio::test]
+async fn test_governed_orchestrator_injects_preflight_and_postrun_context() {
+    let (runners, prompts) = prompt_echo_runners();
+    let orchestrator =
+        Orchestrator::new(base_definitions(), runners, OrchestratorOptions::default()).unwrap();
+    let governed = GovernedOrchestrator::new(orchestrator);
+
+    let governance = GovernanceInjectionRequest {
+        preflight_summary: Some("block write operations on production configs".to_string()),
+        issues: vec![agent_lib::GovernanceInjectionIssue {
+            severity: GovernanceInjectionSeverity::Blocker,
+            code: "cfg_write_prod".to_string(),
+            message: "production config writes require approval".to_string(),
+        }],
+    };
+
+    let result = governed
+        .execute(
+            OrchestrationRequest::new("ship multi-agent pipeline"),
+            Some(governance),
+        )
+        .await
+        .unwrap();
+
+    assert!(result.governance.preflight_applied);
+    assert!(result.governance.postrun_applied);
+    assert!(
+        result
+            .governance
+            .preflight_context
+            .as_deref()
+            .unwrap_or_default()
+            .contains("production config writes require approval")
+    );
+    assert!(
+        result
+            .governance
+            .postrun_context
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Branch metrics")
+    );
+
+    let prompts = prompts.lock().await;
+    let planner_prompt = prompts.get("planner").cloned().unwrap_or_default();
+    let reviewer_prompt = prompts.get("reviewer").cloned().unwrap_or_default();
+
+    assert!(planner_prompt.contains("Governance preflight"));
+    assert!(planner_prompt.contains("cfg_write_prod"));
+    assert!(reviewer_prompt.contains("Governance postrun review"));
+    assert!(reviewer_prompt.contains("Branch metrics"));
 }
 
 #[test]
@@ -351,4 +430,24 @@ fn base_runners(scenario: Scenario) -> HashMap<String, Arc<dyn AgentRunner>> {
         );
     }
     runners
+}
+
+fn prompt_echo_runners() -> (
+    HashMap<String, Arc<dyn AgentRunner>>,
+    Arc<Mutex<HashMap<String, String>>>,
+) {
+    let prompts = Arc::new(Mutex::new(HashMap::new()));
+    let mut runners: HashMap<String, Arc<dyn AgentRunner>> = HashMap::new();
+
+    for name in ["planner", "worker_a", "worker_b", "worker_c", "reviewer"] {
+        runners.insert(
+            name.to_string(),
+            Arc::new(PromptEchoRunner {
+                name: name.to_string(),
+                prompts: Arc::clone(&prompts),
+            }),
+        );
+    }
+
+    (runners, prompts)
 }

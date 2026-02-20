@@ -61,17 +61,14 @@ impl AgentBuilder {
     /// Connects to an MCP server and registers all its tools.
     pub async fn with_mcp_server(mut self, endpoint: impl Into<String>) -> Self {
         let endpoint_str = endpoint.into();
-        let config = match server_config_from_endpoint("mcp-inline".to_string(), endpoint_str.clone()) {
-            Ok(config) => config,
-            Err(err) => {
-                tracing::warn!(
-                    "Failed to parse MCP endpoint '{}': {}",
-                    endpoint_str,
-                    err
-                );
-                return self;
-            }
-        };
+        let config =
+            match server_config_from_endpoint("mcp-inline".to_string(), endpoint_str.clone()) {
+                Ok(config) => config,
+                Err(err) => {
+                    tracing::warn!("Failed to parse MCP endpoint '{}': {}", endpoint_str, err);
+                    return self;
+                }
+            };
 
         let client = match McpClient::connect(config).await {
             Ok(client) => Arc::new(client),

@@ -1,5 +1,6 @@
 mod config;
 mod definition;
+mod governed_orchestrator;
 mod mcp_integration;
 mod orchestration;
 mod orchestrator;
@@ -17,10 +18,12 @@ use crate::tools::{ApprovalHook, Tool, ToolExecutor, ToolRegistry};
 
 pub use config::AgentConfig;
 pub use definition::AgentDefinition;
+pub use governed_orchestrator::GovernedOrchestrator;
 pub use orchestration::{
-    AgentRole, BranchResult, OrchestrationArtifact, OrchestrationHistoryEntry,
-    OrchestrationRequest, OrchestrationResult, OrchestrationTimings, OrchestratorOptions,
-    StepStatus,
+    AgentRole, BranchResult, GovernanceInjectionIssue, GovernanceInjectionRequest,
+    GovernanceInjectionResult, GovernanceInjectionSeverity, GovernedOrchestrationResult,
+    OrchestrationArtifact, OrchestrationHistoryEntry, OrchestrationRequest, OrchestrationResult,
+    OrchestrationTimings, OrchestratorOptions, StepStatus,
 };
 pub use orchestrator::Orchestrator;
 pub use registry::{AgentRegistry, HandoffReceiver, global_agent_registry};

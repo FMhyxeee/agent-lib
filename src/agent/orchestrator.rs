@@ -9,7 +9,8 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::agent::{
-    AgentDefinition, AgentRole, AgentRunner, BranchResult, OrchestrationArtifact,
+    AgentDefinition, AgentRole, AgentRunner, BranchResult, GovernanceInjectionRequest,
+    GovernanceInjectionResult, GovernanceInjectionSeverity, OrchestrationArtifact,
     OrchestrationHistoryEntry, OrchestrationRequest, OrchestrationResult, OrchestrationTimings,
     OrchestratorOptions, StepStatus,
 };
@@ -103,15 +104,35 @@ impl Orchestrator {
         })
     }
 
-    pub async fn execute(
+    pub async fn execute(&self, request: OrchestrationRequest) -> AgentResult<OrchestrationResult> {
+        self.execute_internal(request, None)
+            .await
+            .map(|(result, _)| result)
+    }
+
+    pub async fn execute_with_governance(
+        &self,
+        request: OrchestrationRequest,
+        governance: GovernanceInjectionRequest,
+    ) -> AgentResult<(OrchestrationResult, GovernanceInjectionResult)> {
+        self.execute_internal(request, Some(governance)).await
+    }
+
+    async fn execute_internal(
         &self,
         mut request: OrchestrationRequest,
-    ) -> AgentResult<OrchestrationResult> {
+        governance: Option<GovernanceInjectionRequest>,
+    ) -> AgentResult<(OrchestrationResult, GovernanceInjectionResult)> {
         if request.goal.trim().is_empty() {
             return Err(AgentError::InvalidConfig(
                 "goal cannot be empty".to_string(),
             ));
         }
+
+        let preflight_context = governance
+            .as_ref()
+            .map(format_governance_preflight)
+            .filter(|text| !text.trim().is_empty());
 
         let run_id = request
             .run_id
@@ -124,7 +145,11 @@ impl Orchestrator {
 
         let planner_definition = self.definition(&self.planner_name)?.clone();
         let planner_runner = self.runner(&self.planner_name)?;
-        let planner_prompt = build_planner_prompt(&request.goal, &planner_definition.instructions);
+        let planner_prompt = build_planner_prompt(
+            &request.goal,
+            &planner_definition.instructions,
+            preflight_context.as_deref(),
+        );
         let planner_start = Instant::now();
         let planner_output = planner_runner.run(&planner_prompt).await?;
         let planner_ms = elapsed_ms(planner_start);
@@ -230,6 +255,11 @@ impl Orchestrator {
             });
         }
 
+        let postrun_context = governance
+            .as_ref()
+            .map(|request| format_governance_postrun(request, &branch_results))
+            .filter(|text| !text.trim().is_empty());
+
         let reviewer_definition = self.definition(&self.reviewer_name)?.clone();
         let reviewer_runner = self.runner(&self.reviewer_name)?;
         let reviewer_prompt = build_reviewer_prompt(
@@ -238,6 +268,7 @@ impl Orchestrator {
             &planner_artifact_id,
             &branch_results,
             &reviewer_definition.instructions,
+            postrun_context.as_deref(),
         );
         let reviewer_start = Instant::now();
         let (final_output, reviewer_status, reviewer_error) =
@@ -290,7 +321,7 @@ impl Orchestrator {
             total_ms,
         );
 
-        Ok(OrchestrationResult {
+        let result = OrchestrationResult {
             run_id,
             goal: request.goal,
             final_output,
@@ -305,7 +336,16 @@ impl Orchestrator {
                 reviewer_ms,
                 branch_ms,
             },
-        })
+        };
+
+        let governance_result = GovernanceInjectionResult {
+            preflight_applied: preflight_context.is_some(),
+            preflight_context,
+            postrun_applied: postrun_context.is_some(),
+            postrun_context,
+        };
+
+        Ok((result, governance_result))
     }
 
     fn find_unique_role(
@@ -374,10 +414,20 @@ fn summarize_text(content: &str, max_chars: usize) -> String {
     }
 }
 
-fn build_planner_prompt(goal: &str, planner_instructions: &str) -> String {
-    format!(
-        "Role: Planner\nInstructions:\n{planner_instructions}\n\nGoal:\n{goal}\n\nOutput requirement:\nProvide a concise plan optimized for parallel execution by multiple workers."
-    )
+fn build_planner_prompt(
+    goal: &str,
+    planner_instructions: &str,
+    governance_preflight: Option<&str>,
+) -> String {
+    if let Some(governance) = governance_preflight {
+        format!(
+            "Role: Planner\nInstructions:\n{planner_instructions}\n\nGoal:\n{goal}\n\nGovernance preflight:\n{governance}\n\nOutput requirement:\nProvide a concise plan optimized for parallel execution by multiple workers. Explicitly account for governance preflight constraints."
+        )
+    } else {
+        format!(
+            "Role: Planner\nInstructions:\n{planner_instructions}\n\nGoal:\n{goal}\n\nOutput requirement:\nProvide a concise plan optimized for parallel execution by multiple workers."
+        )
+    }
 }
 
 fn build_worker_prompt(
@@ -391,12 +441,105 @@ fn build_worker_prompt(
     )
 }
 
+fn format_governance_preflight(governance: &GovernanceInjectionRequest) -> String {
+    let mut lines = Vec::new();
+    if let Some(summary) = governance.preflight_summary.as_ref() {
+        if !summary.trim().is_empty() {
+            lines.push(format!("Summary: {}", summary.trim()));
+        }
+    }
+
+    if !governance.issues.is_empty() {
+        lines.push("Issues:".to_string());
+        for issue in &governance.issues {
+            lines.push(format!(
+                "- [{:?}] {}: {}",
+                issue.severity, issue.code, issue.message
+            ));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn format_governance_postrun(
+    governance: &GovernanceInjectionRequest,
+    branch_results: &[BranchResult],
+) -> String {
+    let mut lines = Vec::new();
+
+    let success_count = branch_results
+        .iter()
+        .filter(|result| result.status == StepStatus::Success)
+        .count();
+    let failed_count = branch_results
+        .iter()
+        .filter(|result| result.status == StepStatus::Failed)
+        .count();
+    let timeout_count = branch_results
+        .iter()
+        .filter(|result| result.status == StepStatus::Timeout)
+        .count();
+
+    lines.push(format!(
+        "Branch metrics: success={}, failed={}, timeout={}",
+        success_count, failed_count, timeout_count
+    ));
+
+    let blocker_count = governance
+        .issues
+        .iter()
+        .filter(|issue| issue.severity == GovernanceInjectionSeverity::Blocker)
+        .count();
+    let warning_count = governance
+        .issues
+        .iter()
+        .filter(|issue| issue.severity == GovernanceInjectionSeverity::Warning)
+        .count();
+    let info_count = governance
+        .issues
+        .iter()
+        .filter(|issue| issue.severity == GovernanceInjectionSeverity::Info)
+        .count();
+
+    lines.push(format!(
+        "Preflight issue levels: blocker={}, warning={}, info={}",
+        blocker_count, warning_count, info_count
+    ));
+
+    if let Some(summary) = governance.preflight_summary.as_ref() {
+        if !summary.trim().is_empty() {
+            lines.push(format!("Preflight summary: {}", summary.trim()));
+        }
+    }
+
+    let mut unresolved = Vec::new();
+    if failed_count > 0 || timeout_count > 0 {
+        unresolved.push("Execution has failed/timed-out branches.".to_string());
+    }
+    if blocker_count > 0 {
+        unresolved.push("Preflight reported blocker-level risks.".to_string());
+    }
+
+    if unresolved.is_empty() {
+        lines.push("Governance status: no blocker-level residual risk detected.".to_string());
+    } else {
+        lines.push("Governance status: residual risks detected.".to_string());
+        for item in unresolved {
+            lines.push(format!("- {}", item));
+        }
+    }
+
+    lines.join("\n")
+}
+
 fn build_reviewer_prompt(
     goal: &str,
     planner_summary: &str,
     planner_artifact_id: &str,
     branch_results: &[BranchResult],
     reviewer_instructions: &str,
+    governance_postrun: Option<&str>,
 ) -> String {
     let mut branch_lines = Vec::new();
     for result in branch_results {
@@ -407,10 +550,18 @@ fn build_reviewer_prompt(
             result.worker, result.status, artifact, result.summary, error
         ));
     }
-    format!(
-        "Role: Reviewer\nInstructions:\n{reviewer_instructions}\n\nGlobal goal:\n{goal}\n\nPlanner summary: {planner_summary}\nPlanner artifact: {planner_artifact_id}\n\nBranch results:\n{}\n\nOutput requirement:\nProduce a final merged answer and explicitly mention impacts from failed or timed-out branches.",
-        branch_lines.join("\n")
-    )
+
+    if let Some(governance) = governance_postrun {
+        format!(
+            "Role: Reviewer\nInstructions:\n{reviewer_instructions}\n\nGlobal goal:\n{goal}\n\nPlanner summary: {planner_summary}\nPlanner artifact: {planner_artifact_id}\n\nBranch results:\n{}\n\nGovernance postrun review:\n{governance}\n\nOutput requirement:\nProduce a final merged answer and explicitly mention impacts from failed or timed-out branches. Include governance implications in the conclusion.",
+            branch_lines.join("\n")
+        )
+    } else {
+        format!(
+            "Role: Reviewer\nInstructions:\n{reviewer_instructions}\n\nGlobal goal:\n{goal}\n\nPlanner summary: {planner_summary}\nPlanner artifact: {planner_artifact_id}\n\nBranch results:\n{}\n\nOutput requirement:\nProduce a final merged answer and explicitly mention impacts from failed or timed-out branches.",
+            branch_lines.join("\n")
+        )
+    }
 }
 
 fn build_reviewer_fallback(goal: &str, branch_results: &[BranchResult]) -> String {

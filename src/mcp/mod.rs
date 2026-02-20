@@ -12,6 +12,6 @@ pub use manager::McpManager;
 pub use rmcp::model::{
     CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult,
     PaginatedRequestParams, Prompt, PromptArgument, PromptMessage, PromptMessageContent,
-    PromptMessageRole,
-    ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, Tool,
+    PromptMessageRole, ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
+    Tool,
 };

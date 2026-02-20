@@ -110,8 +110,9 @@ impl<'de> Deserialize<'de> for TransportType {
                 let normalized = value.trim().to_ascii_lowercase();
                 match normalized.as_str() {
                     "stdio" => Ok(TransportType::Stdio),
-                    "streamable_http" | "streamable-http" | "streamablehttp" | "http"
-                    | "https" => Ok(TransportType::StreamableHttp),
+                    "streamable_http" | "streamable-http" | "streamablehttp" | "http" | "https" => {
+                        Ok(TransportType::StreamableHttp)
+                    }
                     "tcp" | "websocket" | "ws" | "wss" | "sse" => {
                         Err(E::custom(unsupported_transport_message(value)))
                     }
@@ -355,7 +356,10 @@ impl McpConfig {
         for server in &mut self.servers {
             server.name = Self::expand_env_vars(&server.name);
             server.endpoint = Self::expand_env_vars(&server.endpoint);
-            server.command = server.command.as_ref().map(|cmd| Self::expand_env_vars(cmd));
+            server.command = server
+                .command
+                .as_ref()
+                .map(|cmd| Self::expand_env_vars(cmd));
             server.args = server
                 .args
                 .iter()
@@ -381,7 +385,10 @@ impl McpConfig {
                 auth.api_key = auth.api_key.as_ref().map(|k| Self::expand_env_vars(k));
                 auth.token_url = auth.token_url.as_ref().map(|t| Self::expand_env_vars(t));
                 auth.client_id = auth.client_id.as_ref().map(|c| Self::expand_env_vars(c));
-                auth.client_secret = auth.client_secret.as_ref().map(|c| Self::expand_env_vars(c));
+                auth.client_secret = auth
+                    .client_secret
+                    .as_ref()
+                    .map(|c| Self::expand_env_vars(c));
                 auth.scope = auth.scope.as_ref().map(|s| Self::expand_env_vars(s));
                 auth.audience = auth.audience.as_ref().map(|a| Self::expand_env_vars(a));
             }
@@ -460,7 +467,10 @@ impl McpConfig {
 
     /// Get all enabled servers
     pub fn get_enabled_servers(&self) -> Vec<&ServerConfig> {
-        self.servers.iter().filter(|server| server.enabled).collect()
+        self.servers
+            .iter()
+            .filter(|server| server.enabled)
+            .collect()
     }
 
     /// Validate configuration
@@ -497,7 +507,8 @@ impl McpConfig {
                             "Server '{}' requires endpoint for streamable_http transport",
                             server.name
                         ));
-                    } else if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+                    } else if !endpoint.starts_with("http://") && !endpoint.starts_with("https://")
+                    {
                         errors.push(format!(
                             "Server '{}' endpoint must start with http:// or https:// for streamable_http transport",
                             server.name

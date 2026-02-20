@@ -11,9 +11,12 @@ pub mod tools;
 pub mod trace;
 
 pub use agent::{
-    Agent, AgentBuilder, AgentConfig, AgentRegistry, AgentRole, BranchResult, HandoffReceiver,
-    OrchestrationArtifact, OrchestrationHistoryEntry, OrchestrationRequest, OrchestrationResult,
-    OrchestrationTimings, Orchestrator, OrchestratorOptions, StepStatus, global_agent_registry,
+    Agent, AgentBuilder, AgentConfig, AgentRegistry, AgentRole, BranchResult,
+    GovernanceInjectionIssue, GovernanceInjectionRequest, GovernanceInjectionResult,
+    GovernanceInjectionSeverity, GovernedOrchestrationResult, GovernedOrchestrator,
+    HandoffReceiver, OrchestrationArtifact, OrchestrationHistoryEntry, OrchestrationRequest,
+    OrchestrationResult, OrchestrationTimings, Orchestrator, OrchestratorOptions, StepStatus,
+    global_agent_registry,
 };
 pub use error::{AgentError, AgentResult};
 pub use protocol::{Event, Op};

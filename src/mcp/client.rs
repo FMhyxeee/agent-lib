@@ -28,13 +28,13 @@ impl McpClient {
         self.list_tools_with_timeout(None).await
     }
 
-    pub async fn list_tools_with_timeout(&self, timeout: Option<Duration>) -> AgentResult<Vec<Tool>> {
+    pub async fn list_tools_with_timeout(
+        &self,
+        timeout: Option<Duration>,
+    ) -> AgentResult<Vec<Tool>> {
         self.with_timeout(timeout, async {
             let service = self.service.lock().await;
-            service
-                .list_all_tools()
-                .await
-                .map_err(map_service_error)
+            service.list_all_tools().await.map_err(map_service_error)
         })
         .await
     }
@@ -80,7 +80,10 @@ impl McpClient {
         .await
     }
 
-    pub async fn read_resource(&self, request: ReadResourceRequestParams) -> AgentResult<ReadResourceResult> {
+    pub async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+    ) -> AgentResult<ReadResourceResult> {
         self.read_resource_with_timeout(request, None).await
     }
 
@@ -109,15 +112,15 @@ impl McpClient {
     ) -> AgentResult<Vec<Prompt>> {
         self.with_timeout(timeout, async {
             let service = self.service.lock().await;
-            service
-                .list_all_prompts()
-                .await
-                .map_err(map_service_error)
+            service.list_all_prompts().await.map_err(map_service_error)
         })
         .await
     }
 
-    pub async fn get_prompt(&self, request: GetPromptRequestParams) -> AgentResult<GetPromptResult> {
+    pub async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+    ) -> AgentResult<GetPromptResult> {
         self.get_prompt_with_timeout(request, None).await
     }
 

@@ -1669,7 +1669,9 @@ async fn handle_get_mcp_prompt(sess: &Session, name: String, arguments: Option<s
                             crate::mcp::PromptMessageContent::Resource { resource } => {
                                 let text = match &resource.resource {
                                     crate::mcp::ResourceContents::TextResourceContents {
-                                        uri, text, ..
+                                        uri,
+                                        text,
+                                        ..
                                     } => {
                                         if text.is_empty() {
                                             uri.clone()
@@ -1678,7 +1680,8 @@ async fn handle_get_mcp_prompt(sess: &Session, name: String, arguments: Option<s
                                         }
                                     }
                                     crate::mcp::ResourceContents::BlobResourceContents {
-                                        uri, ..
+                                        uri,
+                                        ..
                                     } => uri.clone(),
                                 };
                                 crate::protocol::PromptContent::Text { text }
