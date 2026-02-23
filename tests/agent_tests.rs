@@ -11,8 +11,8 @@ use agent_lib::agent::{AgentDefinition, AgentRole, AgentRunner, HandoffReceiver}
 use agent_lib::model::{Message, ModelClient, ModelResponse, StreamChunk, TokenUsage};
 use agent_lib::{
     AgentBuilder, AgentError, AgentRegistry, AgentResult, GovernanceInjectionRequest,
-    GovernanceInjectionSeverity, GovernedOrchestrator, OrchestrationRequest, Orchestrator,
-    OrchestratorOptions, StepStatus,
+    GovernanceInjectionSeverity, GovernedOrchestrator, ModelError, OrchestrationRequest,
+    Orchestrator, OrchestratorOptions, StepStatus,
 };
 
 #[derive(Clone)]
@@ -76,7 +76,7 @@ impl AgentRunner for ScenarioRunner {
                 Ok("worker_c output".to_string())
             }
             (Scenario::WorkerFail, "worker_b") => {
-                Err(AgentError::Model("worker_b failed".to_string()))
+                Err(AgentError::Model(ModelError::Other("worker_b failed".to_string())))
             }
             (Scenario::WorkerFail, "worker_a") | (Scenario::WorkerFail, "worker_c") => {
                 Ok(format!("{} output", self.name))
@@ -92,7 +92,7 @@ impl AgentRunner for ScenarioRunner {
             | (Scenario::ReviewerFail, "worker_b")
             | (Scenario::ReviewerFail, "worker_c") => Ok(format!("{} output", self.name)),
             (Scenario::ReviewerFail, "reviewer") => {
-                Err(AgentError::Model("reviewer failed".to_string()))
+                Err(AgentError::Model(ModelError::Other("reviewer failed".to_string())))
             }
             (_, "reviewer") => Ok("reviewer merged output".to_string()),
             _ => Err(AgentError::InvalidConfig("unknown test runner".to_string())),

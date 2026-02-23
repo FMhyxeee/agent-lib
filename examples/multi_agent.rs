@@ -5,6 +5,7 @@ use agent_lib::agent::{
     AgentDefinition, AgentRole, AgentRunner, OrchestrationRequest, OrchestratorOptions,
 };
 use agent_lib::{AgentError, AgentResult, Orchestrator};
+use agent_lib::ModelError;
 use async_trait::async_trait;
 use tokio::time::{Duration, sleep};
 
@@ -24,7 +25,7 @@ impl AgentRunner for DemoRunner {
                 Ok("UI branch: render branch status and blackboard summary.".to_string())
             }
             "worker_test" => Err(AgentError::Model(
-                "simulated branch failure for demonstration".to_string(),
+                ModelError::Other("simulated branch failure for demonstration".to_string()),
             )),
             "reviewer" => Ok("Final result: combine API+UI work, and flag missing testing branch due to failure."
                 .to_string()),

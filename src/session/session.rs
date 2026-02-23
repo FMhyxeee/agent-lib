@@ -14,7 +14,6 @@ use crate::session::{ConversationHistory, SessionState};
 use crate::skills::{SkillConfig, SkillRegistry};
 use crate::tasks::{RunningTask, SessionTask};
 use crate::tools::{ToolDef, ToolExecutor};
-use chrono;
 
 /// TaskSession - 任务需要访问的 Session 接口
 ///
@@ -313,16 +312,12 @@ impl std::fmt::Debug for Session {
 #[derive(Clone, Debug)]
 struct UndoSnapshot {
     history: ConversationHistory,
-    #[allow(dead_code)]
-    turn_id: String,
-    #[allow(dead_code)]
-    timestamp: i64,
 }
 
 #[derive(Clone, Debug)]
 pub struct SessionHandle {
     submission: SubmissionQueue,
-    event_stream: Arc<Mutex<ReceiverStream<Event>>>,
+    event_stream: Arc<tokio::sync::Mutex<ReceiverStream<Event>>>,
 }
 
 impl Session {
@@ -359,7 +354,7 @@ impl Session {
 
         let handle = SessionHandle {
             submission: session.submission.clone(),
-            event_stream: Arc::new(Mutex::new(event_stream)),
+            event_stream: Arc::new(tokio::sync::Mutex::new(event_stream)),
         };
 
         // 修复 P0-3: 使用完整的 submission_loop 而非简化版本
@@ -446,7 +441,7 @@ impl Session {
             sub_id: uuid::Uuid::new_v4().to_string(),
             model: self.config.default_model.clone(),
             cwd: self.config.default_cwd.clone(),
-            approval_policy_v2: self.config.default_approval_policy,
+            approval_policy: self.config.default_approval_policy,
             ..Default::default()
         })
     }
@@ -575,7 +570,8 @@ impl SessionHandle {
     }
 
     pub async fn next_event(&self) -> Option<Event> {
-        self.event_stream.lock().await.next().await
+        let mut stream = self.event_stream.lock().await;
+        stream.next().await
     }
 }
 
@@ -669,11 +665,7 @@ impl Session {
     /// 创建快照
     pub async fn create_snapshot(&self) {
         let history = self.history().await;
-        let snapshot = UndoSnapshot {
-            history,
-            turn_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now().timestamp(),
-        };
+        let snapshot = UndoSnapshot { history };
 
         let mut stack = self.undo_stack.lock().await;
         stack.push_back(snapshot);
@@ -865,7 +857,7 @@ async fn session_loop_enhanced(
                             }
                             Err(timeout_err) => {
                                 tracing::error!("Model call timed out: {:?}", timeout_err);
-                                let error = AgentError::Model(format!("Model call timed out: {:?}", timeout_err));
+                                let error = AgentError::Model(ModelError::Other(format!("Model call timed out: {:?}", timeout_err)));
                                 let _ = sess
                                     .emit_event(Event::ModelStreaming {
                                         chunk: "[ERROR: Model call timed out]\n".to_string(),

@@ -1,4 +1,12 @@
-﻿use std::pin::Pin;
+﻿//! 本地模型 API 提供者
+//!
+//! 包含与本地模型服务（如 Ollama）交互的序列化结构和请求处理逻辑。
+//! 注意: 某些内部结构体和函数标记为 #[allow(dead_code)]，因为它们：
+//! - 是 API 响应的反序列化所必需的（Serde 需要完整结构定义）
+//! - 为未来的流式 API 功能预留
+//! - 是公共 API 实现的内部细节
+
+use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -7,7 +15,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::error::{AgentError, AgentResult};
+use crate::error::{AgentError, AgentResult, ModelError};
 use crate::model::{
     Message, MessageRole, ModelClient, ModelResponse, StreamChunk, TokenUsage, ToolCall,
 };
@@ -141,20 +149,20 @@ impl ModelClient for LocalProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|err| AgentError::Model(format!("local request failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(format!("local request failed: {err}"))))?;
 
         if !response.status().is_success() {
-            return Err(AgentError::Model(format!(
+            return Err(AgentError::Model(ModelError::RequestFailed(format!(
                 "local request failed with status {}: {}",
                 response.status(),
                 response.text().await.unwrap_or_default()
-            )));
+            ))));
         }
 
         let response: LocalChatResponse = response
             .json()
             .await
-            .map_err(|err| AgentError::Model(format!("local parse failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::InvalidResponse(format!("local parse failed: {err}"))))?;
 
         let message = response.message;
         let content = message
@@ -201,14 +209,14 @@ impl ModelClient for LocalProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|err| AgentError::Model(format!("local request failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(format!("local request failed: {err}"))))?;
 
         if !response.status().is_success() {
-            return Err(AgentError::Model(format!(
+            return Err(AgentError::Model(ModelError::RequestFailed(format!(
                 "local stream failed with status {}: {}",
                 response.status(),
                 response.text().await.unwrap_or_default()
-            )));
+            ))));
         }
 
         let mut stream = response.bytes_stream();
@@ -321,7 +329,7 @@ fn map_tools(tools: Vec<ToolDef>) -> Option<Vec<LocalTool>> {
 #[allow(dead_code)]
 fn parse_stream_delta(line: &str) -> AgentResult<Option<String>> {
     let response: LocalChatResponse = serde_json::from_str(line)
-        .map_err(|err| AgentError::Model(format!("local stream parse failed: {err}")))?;
+        .map_err(|err| AgentError::Model(ModelError::InvalidResponse(format!("local stream parse failed: {err}"))))?;
     let delta = response
         .message
         .and_then(|msg| msg.content)

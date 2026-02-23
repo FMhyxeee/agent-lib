@@ -1,4 +1,5 @@
 mod compact;
+mod handlers;
 mod r#loop;
 mod regular;
 

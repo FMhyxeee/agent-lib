@@ -1,4 +1,12 @@
-﻿use std::pin::Pin;
+﻿//! Anthropic API 提供者
+//!
+//! 包含与 Anthropic Claude API 交互的序列化结构和请求处理逻辑。
+//! 注意: 某些内部结构体和函数标记为 #[allow(dead_code)]，因为它们：
+//! - 是 API 响应的反序列化所必需的（Serde 需要完整结构定义）
+//! - 为未来的流式 API 功能预留
+//! - 是公共 API 实现的内部细节
+
+use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -8,7 +16,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::error::{AgentError, AgentResult};
+use crate::error::{AgentError, AgentResult, ModelError};
 use crate::model::{
     Message, MessageRole, ModelClient, ModelResponse, StreamChunk, TokenUsage, ToolCall,
 };
@@ -173,20 +181,20 @@ impl ModelClient for AnthropicProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|err| AgentError::Model(format!("anthropic request failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(format!("anthropic request failed: {err}"))))?;
 
         if !response.status().is_success() {
-            return Err(AgentError::Model(format!(
+            return Err(AgentError::Model(ModelError::RequestFailed(format!(
                 "anthropic request failed with status {}: {}",
                 response.status(),
                 response.text().await.unwrap_or_default()
-            )));
+            ))));
         }
 
         let response: AnthropicResponse = response
             .json()
             .await
-            .map_err(|err| AgentError::Model(format!("anthropic parse failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::InvalidResponse(format!("anthropic parse failed: {err}"))))?;
 
         let mut content = String::new();
         let mut tool_calls = Vec::new();
@@ -244,14 +252,14 @@ impl ModelClient for AnthropicProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|err| AgentError::Model(format!("anthropic request failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(format!("anthropic request failed: {err}"))))?;
 
         if !response.status().is_success() {
-            return Err(AgentError::Model(format!(
+            return Err(AgentError::Model(ModelError::RequestFailed(format!(
                 "anthropic stream failed with status {}: {}",
                 response.status(),
                 response.text().await.unwrap_or_default()
-            )));
+            ))));
         }
 
         let mut stream = response.bytes_stream();
@@ -289,13 +297,13 @@ fn auth_headers(api_key: Option<&str>) -> AgentResult<HeaderMap> {
     let key = api_key
         .map(|s| s.to_string())
         .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
-        .ok_or_else(|| AgentError::Model("anthropic api key missing".to_string()))?;
+        .ok_or_else(|| AgentError::Model(ModelError::ApiKeyMissing))?;
 
     let mut headers = HeaderMap::new();
     headers.insert(
         "x-api-key",
         HeaderValue::from_str(&key)
-            .map_err(|err| AgentError::Model(format!("auth header invalid: {err}")))?,
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(format!("auth header invalid: {err}"))))?,
     );
     headers.insert(
         "anthropic-version",

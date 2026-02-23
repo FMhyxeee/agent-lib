@@ -32,6 +32,7 @@ pub struct Agent {
     config: AgentConfig,
     model: Arc<dyn ModelClient>,
     tool_executor: ToolExecutor,
+    session: Arc<Session>,
     session_handle: SessionHandle,
 }
 
@@ -101,8 +102,7 @@ impl AgentBuilder {
         let model = self
             .model
             .ok_or_else(|| AgentError::InvalidConfig("model provider missing".to_string()))?;
-        let (_session, handle) = Session::new(self.config.queue_buffer);
-        // _session 现在是 Arc<Session>,但我们暂时不需要它
+        let (session, handle) = Session::new(self.config.queue_buffer);
 
         let mut executor = ToolExecutor::new(self.registry);
         if let Some(hook) = self.approval {
@@ -119,6 +119,7 @@ impl AgentBuilder {
             config: self.config,
             model,
             tool_executor: executor,
+            session,
             session_handle: handle,
         })
     }
@@ -126,12 +127,12 @@ impl AgentBuilder {
 
 impl Agent {
     pub fn new(config: AgentConfig, model: Arc<dyn ModelClient>, tools: ToolExecutor) -> Self {
-        let (_session, handle) = Session::new(config.queue_buffer);
-        // _session 现在是 Arc<Session>,但我们暂时不需要它
+        let (session, handle) = Session::new(config.queue_buffer);
         Self {
             config,
             model,
             tool_executor: tools,
+            session,
             session_handle: handle,
         }
     }
@@ -160,6 +161,19 @@ impl Agent {
 
         let response: ModelResponse = self.model.chat(messages, Vec::new()).await?;
         Ok(response.content)
+    }
+}
+
+impl Drop for Agent {
+    fn drop(&mut self) {
+        // 显式引用 session 以确保其生命周期被正确管理
+        // session 必须在 Agent 存活期间保持有效，因为后台任务持有其引用
+        let _session = &self.session;
+
+        let handle = self.session_handle.clone();
+        tokio::spawn(async move {
+            let _ = handle.submit(Op::Shutdown).await;
+        });
     }
 }
 

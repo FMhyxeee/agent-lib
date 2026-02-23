@@ -47,7 +47,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::error::{AgentError, AgentResult};
+use crate::error::{AgentError, AgentResult, ModelError};
 use crate::model::{
     Message, MessageRole, ModelClient, ModelResponse, StreamChunk, TokenUsage, ToolCall,
 };
@@ -207,27 +207,27 @@ impl ModelClient for GlmCodingPlanProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|err| AgentError::Model(format!("glm coding plan request failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(format!("glm coding plan request failed: {err}"))))?;
 
         let status = response.status();
         let text = response
             .text()
             .await
-            .map_err(|err| AgentError::Model(format!("glm coding plan read failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(format!("glm coding plan read failed: {err}"))))?;
 
         if !status.is_success() {
-            return Err(AgentError::Model(format!(
+            return Err(AgentError::Model(ModelError::RequestFailed(format!(
                 "glm coding plan request failed (status: {}): {}",
                 status,
                 truncate_response(&text)
-            )));
+            ))));
         }
 
         let response: GlmChatResponse = serde_json::from_str(&text).map_err(|err| {
-            AgentError::Model(format!(
+            AgentError::Model(ModelError::InvalidResponse(format!(
                 "glm coding plan parse failed: {err}\nresponse: {}",
                 truncate_response(&text)
-            ))
+            )))
         })?;
 
         let choice = response.choices.first();
@@ -289,7 +289,7 @@ impl ModelClient for GlmCodingPlanProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|err| AgentError::Model(format!("glm coding plan request failed: {err}")))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(format!("glm coding plan request failed: {err}"))))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -297,11 +297,11 @@ impl ModelClient for GlmCodingPlanProvider {
                 .text()
                 .await
                 .unwrap_or_else(|_| "failed to read error body".to_string());
-            return Err(AgentError::Model(format!(
+            return Err(AgentError::Model(ModelError::RequestFailed(format!(
                 "glm coding plan streaming request failed (status: {}): {}",
                 status,
                 truncate_response(&text)
-            )));
+            ))));
         }
 
         let mut stream = response.bytes_stream();
@@ -425,11 +425,9 @@ fn map_tools(tools: Vec<ToolDef>) -> Option<Vec<GlmTool>> {
 fn auth_headers(api_key: &str) -> AgentResult<HeaderMap> {
     let mut headers = HeaderMap::new();
     let value = format!("Bearer {}", api_key);
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&value)
-            .map_err(|err| AgentError::Model(format!("auth header invalid: {err}")))?,
-    );
+    let header_val = HeaderValue::from_str(&value)
+        .map_err(|err| AgentError::Model(ModelError::Other(format!("auth header invalid: {err}"))))?;
+    headers.insert(AUTHORIZATION, header_val);
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     Ok(headers)
 }
@@ -445,7 +443,7 @@ fn truncate_response(body: &str) -> String {
 
 fn parse_delta(payload: &str) -> AgentResult<Option<String>> {
     let response: GlmChatResponse = serde_json::from_str(payload)
-        .map_err(|err| AgentError::Model(format!("glm coding plan stream parse failed: {err}")))?;
+        .map_err(|err| AgentError::Model(ModelError::InvalidResponse(format!("glm coding plan stream parse failed: {err}"))))?;
     let delta = response.choices.first().and_then(|choice| {
         choice
             .delta

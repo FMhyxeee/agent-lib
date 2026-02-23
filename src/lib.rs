@@ -3,6 +3,7 @@ pub mod error;
 pub mod guide_prompt;
 pub mod mcp;
 pub mod model;
+pub mod path;
 pub mod protocol;
 pub mod session;
 pub mod skills;
@@ -19,7 +20,7 @@ pub use agent::{
     OrchestrationResult, OrchestrationTimings, Orchestrator, OrchestratorOptions, StepStatus,
     global_agent_registry,
 };
-pub use error::{AgentError, AgentResult};
+pub use error::{AgentError, AgentResult, ModelError};
 pub use protocol::{Event, Op};
 pub use session::{
     CompactedSummary, Session, SessionConfig, SessionHandle, TaskSession, TurnContext,

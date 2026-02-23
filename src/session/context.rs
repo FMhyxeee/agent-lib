@@ -7,44 +7,52 @@ use crate::token::TruncationPolicy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnContext {
-    // === 现有字段 (保持兼容) ===
+    /// 模型名称
     pub model: String,
-    pub sandbox: Option<String>,
-    pub cwd: Option<String>,
-    pub approval_policy: Option<String>,
 
-    // === 新增字段 ===
+    /// 工作目录
+    pub cwd: Option<String>,
+
     /// Submission ID - 唯一标识本次提交
     pub sub_id: String,
 
-    /// 新版批准策略
-    pub approval_policy_v2: Option<ApprovalPolicy>,
+    /// 批准策略
+    #[serde(default)]
+    pub approval_policy: Option<ApprovalPolicy>,
 
     /// 沙盒策略
-    pub sandbox_policy_v2: Option<crate::protocol::SandboxPolicy>,
+    #[serde(default)]
+    pub sandbox_policy: Option<crate::protocol::SandboxPolicy>,
 
     /// 协作模式
+    #[serde(default)]
     pub collaboration_mode: Option<CollaborationMode>,
 
     /// 推理努力程度
+    #[serde(default)]
     pub reasoning_effort: Option<ReasoningEffort>,
 
     /// 推理摘要
     pub reasoning_summary: Option<ReasoningSummary>,
 
     /// 用户指令
+    #[serde(default)]
     pub user_instructions: Option<String>,
 
     /// 开发者指令
+    #[serde(default)]
     pub developer_instructions: Option<String>,
 
     /// 最终输出 JSON Schema
+    #[serde(default)]
     pub final_output_json_schema: Option<Value>,
 
     /// 截断策略
+    #[serde(default)]
     pub truncation_policy: Option<TruncationPolicy>,
 
     /// 自动压缩 token 限制
+    #[serde(default)]
     pub auto_compact_token_limit: Option<i64>,
 
     /// 上下文窗口大小
@@ -62,12 +70,10 @@ impl Default for TurnContext {
     fn default() -> Self {
         Self {
             model: "default".to_string(),
-            sandbox: None,
             cwd: None,
-            approval_policy: None,
             sub_id: uuid::Uuid::new_v4().to_string(),
-            approval_policy_v2: None,
-            sandbox_policy_v2: None,
+            approval_policy: None,
+            sandbox_policy: None,
             collaboration_mode: None,
             reasoning_effort: None,
             reasoning_summary: None,
@@ -110,13 +116,13 @@ impl TurnContext {
 
     /// 设置批准策略
     pub fn with_approval_policy(mut self, policy: ApprovalPolicy) -> Self {
-        self.approval_policy_v2 = Some(policy);
+        self.approval_policy = Some(policy);
         self
     }
 
     /// 设置沙盒策略
     pub fn with_sandbox_policy(mut self, policy: crate::protocol::SandboxPolicy) -> Self {
-        self.sandbox_policy_v2 = Some(policy);
+        self.sandbox_policy = Some(policy);
         self
     }
 
@@ -146,12 +152,12 @@ impl TurnContext {
 
     /// 获取有效的批准策略
     pub fn get_approval_policy(&self) -> ApprovalPolicy {
-        self.approval_policy_v2.unwrap_or_default()
+        self.approval_policy.unwrap_or_default()
     }
 
     /// 获取有效的沙盒策略
     pub fn get_sandbox_policy(&self) -> crate::protocol::SandboxPolicy {
-        self.sandbox_policy_v2.unwrap_or_default()
+        self.sandbox_policy.unwrap_or_default()
     }
 }
 
@@ -164,8 +170,8 @@ mod tests {
         let ctx = TurnContext::default();
         assert_eq!(ctx.model, "default");
         assert_eq!(ctx.context_window, 200_000); // GLM 模型默认 200K
-        assert!(ctx.approval_policy_v2.is_none());
-        assert!(ctx.sandbox_policy_v2.is_none());
+        assert!(ctx.approval_policy.is_none());
+        assert!(ctx.sandbox_policy.is_none());
     }
 
     #[test]
@@ -186,9 +192,9 @@ mod tests {
 
         assert_eq!(ctx.model, "gpt-4");
         assert_eq!(ctx.cwd, Some("/home/user".to_string()));
-        assert_eq!(ctx.approval_policy_v2, Some(ApprovalPolicy::NeverAsk));
+        assert_eq!(ctx.approval_policy, Some(ApprovalPolicy::NeverAsk));
         assert_eq!(
-            ctx.sandbox_policy_v2,
+            ctx.sandbox_policy,
             Some(crate::protocol::SandboxPolicy::Readonly)
         );
         assert_eq!(ctx.reasoning_effort, Some(ReasoningEffort::High));

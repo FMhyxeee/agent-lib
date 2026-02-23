@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::pin::Pin;
 
-use crate::error::{AgentError, AgentResult};
+use crate::error::{AgentError, AgentResult, ModelError};
 use crate::model::{Message, ModelClient, ModelResponse, StreamChunk, TokenUsage};
 use crate::tools::ToolDef;
 
@@ -147,7 +147,7 @@ impl ModelClient for OpenAiProvider {
             .chat()
             .create(request)
             .await
-            .map_err(|err| AgentError::Model(err.to_string()))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(err.to_string())))?;
 
         let choice = response.choices.first();
         let content = choice
@@ -298,7 +298,7 @@ impl ModelClient for OpenAiProvider {
             .chat()
             .create_stream(request)
             .await
-            .map_err(|err| AgentError::Model(err.to_string()))?;
+            .map_err(|err| AgentError::Model(ModelError::RequestFailed(err.to_string())))?;
 
         let mapped = stream.filter_map(|event| async move {
             match event {
