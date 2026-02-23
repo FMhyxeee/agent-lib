@@ -9,6 +9,7 @@ use tokio::time::timeout;
 
 use crate::error::{AgentError, AgentResult};
 use crate::tools::{Tool, ToolContext, ToolDef, ToolResult};
+use super::git_utils::GitSafeDirectoryManager;
 
 /// Shell 工具安全策略
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +39,8 @@ pub struct ShellToolConfig {
     pub custom_blocklist: Vec<String>,
     /// 自定义白名单（追加到默认白名单）
     pub custom_allowlist: Vec<String>,
+    /// 自动修复 Git safe.directory 问题
+    pub auto_fix_git_permissions: bool,
 }
 
 impl Default for ShellToolConfig {
@@ -47,6 +50,7 @@ impl Default for ShellToolConfig {
             timeout_secs: 30,
             custom_blocklist: Vec::new(),
             custom_allowlist: Vec::new(),
+            auto_fix_git_permissions: true, // 默认启用自动修复
         }
     }
 }
@@ -55,6 +59,7 @@ impl Default for ShellToolConfig {
 #[derive(Debug)]
 pub struct ShellTool {
     config: ShellToolConfig,
+    git_manager: GitSafeDirectoryManager,
 }
 
 impl Default for ShellTool {
@@ -68,17 +73,89 @@ impl ShellTool {
     pub fn new() -> Self {
         Self {
             config: ShellToolConfig::default(),
+            git_manager: GitSafeDirectoryManager::new(),
         }
     }
 
     /// 使用自定义配置创建 ShellTool
     pub fn with_config(config: ShellToolConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            git_manager: GitSafeDirectoryManager::new(),
+        }
+    }
+
+    /// 设置 Git 仓库路径列表
+    pub fn with_git_repositories(mut self, repo_paths: Vec<String>) -> Self {
+        for path in repo_paths {
+            self.git_manager.add_repository(&path);
+        }
+        self
+    }
+
+    /// 自动发现 workspace 中的 Git 仓库
+    pub fn with_workspace_discovery(mut self, workspace_root: &str) -> Self {
+        let _ = self.git_manager.discover_from_workspace(workspace_root);
+        self
     }
 
     /// 获取当前配置
     pub fn config(&self) -> &ShellToolConfig {
         &self.config
+    }
+
+    /// 尝试在执行 Git 命令前自动修复权限问题
+    async fn try_fix_git_permissions(&self, command: &str) -> Result<(), AgentError> {
+        // 只在启用时处理
+        if !self.config.auto_fix_git_permissions {
+            return Ok(());
+        }
+
+        // 只处理 Git 命令
+        if !command.trim().starts_with("git ") {
+            return Ok(());
+        }
+
+        // 尝试从命令中提取 -C 参数指定的路径，或者使用 cwd
+        let repo_path = self.extract_git_repo_path(command);
+
+        if let Some(path) = repo_path {
+            // 检查并修复这个特定仓库
+            if let Ok(has_issue) = self.git_manager.check_repository(&path) {
+                if has_issue {
+                    tracing::info!(
+                        "Detected Git permission issue for {}, attempting to fix...",
+                        path
+                    );
+                    if let Err(e) = self.git_manager.add_to_safe_directory(&path) {
+                        tracing::warn!("Failed to auto-fix Git permissions: {}", e);
+                        // 不返回错误，让命令继续执行
+                    } else {
+                        tracing::info!("Successfully fixed Git permissions for {}", path);
+                    }
+                }
+            }
+        } else {
+            // 如果无法确定具体仓库，尝试修复所有已知仓库
+            let _ = self.git_manager.fix_all();
+        }
+
+        Ok(())
+    }
+
+    /// 从 Git 命令中提取仓库路径
+    fn extract_git_repo_path(&self, command: &str) -> Option<String> {
+        let parts: Vec<&str> = command.split_whitespace().collect();
+
+        // 查找 -C 参数
+        for (i, part) in parts.iter().enumerate() {
+            if *part == "-C" && i + 1 < parts.len() {
+                return Some(parts[i + 1].to_string());
+            }
+        }
+
+        // 如果没有 -C 参数，返回 None（将使用当前工作目录）
+        None
     }
 
     /// 检查命令是否允许执行
@@ -294,6 +371,9 @@ impl Tool for ShellTool {
             tracing::warn!("Shell command blocked: {}", reason);
             return Err(AgentError::Tool(format!("Command not allowed: {}", reason)));
         }
+
+        // 尝试自动修复 Git 权限问题
+        self.try_fix_git_permissions(command).await?;
 
         tracing::info!("Executing shell command: {}", command);
 
