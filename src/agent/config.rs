@@ -17,7 +17,7 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             name: "default".to_string(),
-            instructions: "You are a helpful assistant.".to_string(),
+            instructions: crate::guide_prompt::guide_agent_system_prompt().to_string(),
             context: TurnContext::default(),
             queue_buffer: 64,
         }

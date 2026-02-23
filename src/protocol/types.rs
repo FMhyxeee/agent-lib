@@ -114,6 +114,22 @@ pub enum CollaborationMode {
     Collaborative,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SubAgentMode {
+    Explore,
+    Plan,
+}
+
+impl SubAgentMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Explore => "explore",
+            Self::Plan => "plan",
+        }
+    }
+}
+
 /// MCP 服务器刷新配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpServerRefreshConfig {
@@ -252,6 +268,16 @@ mod tests {
     #[test]
     fn test_collaboration_mode_default() {
         assert_eq!(CollaborationMode::default(), CollaborationMode::Solo);
+    }
+
+    #[test]
+    fn test_sub_agent_mode_serde() {
+        let mode = SubAgentMode::Explore;
+        let json = serde_json::to_string(&mode).unwrap();
+        assert_eq!(json, "\"explore\"");
+
+        let parsed: SubAgentMode = serde_json::from_str("\"plan\"").unwrap();
+        assert_eq!(parsed, SubAgentMode::Plan);
     }
 
     #[test]

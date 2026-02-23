@@ -11,6 +11,6 @@ pub use types::{
     ApprovalPolicy, CollaborationMode, CompactedItem, CustomPromptInfo, McpPromptInfo,
     McpResourceInfo, McpServerRefreshConfig, McpToolInfo, ModelInfo, PromptArgumentInfo,
     PromptContent, PromptDirectives, PromptMessage, ReasoningEffort, ReasoningSummary,
-    ReviewDecision, ReviewRequest, SandboxPolicy, SkillEntry, TurnAbortReason, UserInputItem,
-    UserInputResponse,
+    ReviewDecision, ReviewRequest, SandboxPolicy, SkillEntry, SubAgentMode, TurnAbortReason,
+    UserInputItem, UserInputResponse,
 };

@@ -24,6 +24,7 @@ tiktoken-rs = "0.5"
 dotenv = "0.15"
 async-openai = "0.26"
 rmcp = { version = "0.15", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 criterion = "0.5"

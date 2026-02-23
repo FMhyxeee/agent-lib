@@ -173,14 +173,18 @@ mod tests {
     #[tokio::test]
     async fn execute_fails_when_language_missing() {
         let tool = CodeExecTool::new();
-        let result = tool.execute(json!({"code": "print(1)"}), &default_ctx()).await;
+        let result = tool
+            .execute(json!({"code": "print(1)"}), &default_ctx())
+            .await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn execute_fails_when_code_missing() {
         let tool = CodeExecTool::new();
-        let result = tool.execute(json!({"language": "python"}), &default_ctx()).await;
+        let result = tool
+            .execute(json!({"language": "python"}), &default_ctx())
+            .await;
         assert!(result.is_err());
     }
 

@@ -159,9 +159,16 @@ async fn test_regular_task_tool_loop() {
     let has_complete = events
         .iter()
         .any(|e| matches!(e, Event::ModelComplete { .. }));
+    let has_uuid_thinking_chunk = events.iter().any(|event| {
+        matches!(
+            event,
+            Event::ModelStreaming { chunk } if chunk.contains("Thinking...")
+        )
+    });
     assert!(has_tool_request);
     assert!(has_tool_result);
     assert!(has_complete);
+    assert!(!has_uuid_thinking_chunk);
 }
 
 #[tokio::test]

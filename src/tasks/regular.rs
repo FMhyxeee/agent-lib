@@ -115,14 +115,7 @@ impl SessionTask for RegularTask {
         let tools = session.list_tools().await;
         debug!("[{}] Available tools: {}", turn_id, tools.len());
 
-        // 5. 发送 ModelStreaming 事件（开始）
-        session
-            .emit_event(Event::ModelStreaming {
-                chunk: format!("[{}] Thinking...\n", turn_id),
-            })
-            .await;
-
-        // 6. 工具调用循环
+        // 5. 工具调用循环
         let mut loop_count = 0;
         let mut current_messages = messages;
         let mut final_content = String::new();

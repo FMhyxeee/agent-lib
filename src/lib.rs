@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod error;
+pub mod guide_prompt;
 pub mod mcp;
 pub mod model;
 pub mod protocol;
@@ -41,7 +42,8 @@ pub use mcp::{
 pub use protocol::{
     ApprovalPolicy, CollaborationMode, CompactedItem, CustomPromptInfo, McpServerRefreshConfig,
     McpToolInfo, PromptDirectives, ReasoningEffort, ReasoningSummary, ReviewDecision,
-    ReviewRequest, SandboxPolicy, SkillEntry, TurnAbortReason, UserInputItem, UserInputResponse,
+    ReviewRequest, SandboxPolicy, SkillEntry, SubAgentMode, TurnAbortReason, UserInputItem,
+    UserInputResponse,
 };
 
 pub use skills::{Skill, SkillConfig, SkillLoader, SkillMetadata, SkillRegistry, SkillSource};

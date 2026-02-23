@@ -2,10 +2,11 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
-use crate::model::MessageRole;
+use crate::guide_prompt::sub_agent_system_prompt;
+use crate::model::{Message, MessageRole};
 use crate::protocol::{
     ApprovalPolicy, CollaborationMode, Event, McpServerRefreshConfig, Op, ReasoningEffort,
-    ReasoningSummary, ReviewDecision, SandboxPolicy,
+    ReasoningSummary, ReviewDecision, SandboxPolicy, SubAgentMode,
 };
 use crate::session::{Session, TurnContext};
 use crate::skills::{Skill, SkillLoader, SkillSource};
@@ -132,6 +133,10 @@ pub async fn submission_loop(sess: Arc<Session>, mut rx_sub: mpsc::Receiver<Subm
 
             Op::RunUserShellCommand { command } => {
                 handle_run_user_shell_command(&sess, command).await;
+            }
+
+            Op::RunSubAgent { mode, input } => {
+                handle_run_sub_agent(&sess, mode, input).await;
             }
 
             Op::ApprovalResponse {
@@ -746,6 +751,94 @@ async fn handle_run_user_shell_command(sess: &Session, command: String) {
 }
 
 /// 检查命令是否允许执行
+async fn handle_run_sub_agent(sess: &Session, mode: SubAgentMode, input: String) {
+    debug!(mode = %mode.as_str(), "Handling run sub-agent");
+
+    let trimmed_input = input.trim();
+    if trimmed_input.is_empty() {
+        sess.emit_event(Event::SubAgentFailed {
+            mode,
+            error: "sub-agent input cannot be empty".to_string(),
+        })
+        .await;
+        sess.emit_event(Event::Error {
+            error: crate::error::AgentError::Tool("sub-agent input cannot be empty".to_string()),
+        })
+        .await;
+        return;
+    }
+
+    let stored_user_prompt = format!("[sub-agent:{}]\n{}", mode.as_str(), trimmed_input);
+    sess.push_message(Message::user(stored_user_prompt)).await;
+
+    sess.emit_event(Event::SubAgentStarted {
+        mode,
+        input: trimmed_input.to_string(),
+    })
+    .await;
+    sess.emit_event(Event::SubAgentProgress {
+        mode,
+        message: "building sub-agent prompt".to_string(),
+    })
+    .await;
+
+    let history = sess.history().await;
+    let mut messages = history.for_prompt();
+    messages.insert(0, Message::system(sub_agent_system_prompt(mode)));
+
+    let response = match sess.chat_model(messages, vec![]).await {
+        Ok(response) => response,
+        Err(error) => {
+            sess.emit_event(Event::SubAgentFailed {
+                mode,
+                error: error.to_string(),
+            })
+            .await;
+            sess.emit_event(Event::Error { error }).await;
+            return;
+        }
+    };
+
+    let final_content = response.content.trim().to_string();
+    sess.push_message(Message::assistant(final_content.clone()))
+        .await;
+
+    sess.emit_event(Event::SubAgentProgress {
+        mode,
+        message: "sub-agent response ready".to_string(),
+    })
+    .await;
+
+    let mut chunk = String::new();
+    let chunk_size = 20;
+    for ch in final_content.chars() {
+        chunk.push(ch);
+        if chunk.chars().count() >= chunk_size {
+            sess.emit_event(Event::ModelStreaming {
+                chunk: chunk.clone(),
+            })
+            .await;
+            chunk.clear();
+        }
+    }
+
+    if !chunk.is_empty() {
+        sess.emit_event(Event::ModelStreaming { chunk }).await;
+    }
+
+    sess.emit_event(Event::ModelComplete {
+        content: final_content.clone(),
+        usage: response.usage.clone(),
+    })
+    .await;
+
+    sess.emit_event(Event::SubAgentCompleted {
+        mode,
+        output: final_content,
+    })
+    .await;
+}
+
 fn is_command_allowed(command: &str) -> bool {
     let command_lower = command.to_lowercase();
 

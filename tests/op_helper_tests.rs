@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod op_helper_tests {
     use agent_lib::protocol::ApprovalPolicy;
+    use agent_lib::protocol::SubAgentMode;
     use agent_lib::protocol::UserInputItem;
     use agent_lib::protocol::{
         Op, compact, interrupt, shutdown, undo, user_turn, user_turn_with_config,
@@ -83,6 +84,10 @@ mod op_helper_tests {
                 context: None,
             },
         };
+        let sub_agent_op = Op::RunSubAgent {
+            mode: SubAgentMode::Explore,
+            input: "inspect repository".to_string(),
+        };
 
         assert!(agent_lib::protocol::requires_user_interaction(
             &user_turn_op
@@ -91,6 +96,9 @@ mod op_helper_tests {
             &user_input_op
         ));
         assert!(agent_lib::protocol::requires_user_interaction(&review_op));
+        assert!(agent_lib::protocol::requires_user_interaction(
+            &sub_agent_op
+        ));
 
         // 测试不需要用户交互的操作
         let system_op = Op::Interrupt;

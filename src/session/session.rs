@@ -546,6 +546,20 @@ impl Session {
         let _ = self.event_sender.send(event).await;
     }
 
+    pub async fn chat_model(
+        &self,
+        messages: Vec<Message>,
+        tools: Vec<ToolDef>,
+    ) -> AgentResult<ModelResponse> {
+        if let Some(model) = &self.model {
+            model.chat(messages, tools).await
+        } else {
+            Err(AgentError::NotImplemented(
+                "model not configured in session".to_string(),
+            ))
+        }
+    }
+
     /// 获取事件发送器
     pub fn event_sender(&self) -> mpsc::Sender<Event> {
         self.event_sender.clone()

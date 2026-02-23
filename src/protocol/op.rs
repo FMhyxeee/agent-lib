@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::protocol::{
     CollaborationMode, McpServerRefreshConfig, PromptDirectives, ReasoningEffort, ReasoningSummary,
-    ReviewDecision, ReviewRequest, UserInputItem, UserInputResponse,
+    ReviewDecision, ReviewRequest, SubAgentMode, UserInputItem, UserInputResponse,
 };
 use crate::session::TurnContext;
 
@@ -84,6 +84,7 @@ pub fn requires_user_interaction(op: &Op) -> bool {
             | Op::UserInputAnswer { .. }
             | Op::GetHistoryEntryRequest { .. }
             | Op::Review { .. }
+            | Op::RunSubAgent { .. }
     )
 }
 
@@ -119,7 +120,9 @@ pub enum Op {
         context: TurnContext,
     },
     /// 用户输入 - 简单形式（向后兼容）
-    UserInput { content: String },
+    UserInput {
+        content: String,
+    },
     /// 中断当前操作
     Interrupt,
 
@@ -153,7 +156,10 @@ pub enum Op {
 
     // === 审查和批准操作 ===
     /// 批准响应 - 对工具执行批准的响应
-    ApprovalResponse { request_id: String, approved: bool },
+    ApprovalResponse {
+        request_id: String,
+        approved: bool,
+    },
     /// 执行批准 - 执行代码审查结果
     ExecApproval {
         id: String,
@@ -178,9 +184,14 @@ pub enum Op {
     },
 
     /// 添加到历史 - 手动添加内容到对话历史
-    AddToHistory { text: String },
+    AddToHistory {
+        text: String,
+    },
     /// 获取历史条目请求 - 获取特定历史条目
-    GetHistoryEntryRequest { offset: usize, log_id: u64 },
+    GetHistoryEntryRequest {
+        offset: usize,
+        log_id: u64,
+    },
 
     // === 历史管理操作 ===
     /// 压缩历史 - 手动压缩对话历史
@@ -188,16 +199,26 @@ pub enum Op {
     /// 撤销操作 - 撤销最近的操作
     Undo,
     /// 线程回滚 - 回滚多个回合
-    ThreadRollback { num_turns: u32 },
+    ThreadRollback {
+        num_turns: u32,
+    },
 
     /// 审查 - 代码审查请求
-    Review { review_request: ReviewRequest },
+    Review {
+        review_request: ReviewRequest,
+    },
 
     // === 系统控制操作 ===
     /// 关闭系统
     Shutdown,
     /// 运行用户 Shell 命令
-    RunUserShellCommand { command: String },
+    RunUserShellCommand {
+        command: String,
+    },
+    RunSubAgent {
+        mode: SubAgentMode,
+        input: String,
+    },
 
     // === MCP 协议操作 ===
     /// 列出 MCP 工具
@@ -205,7 +226,9 @@ pub enum Op {
     /// 列出 MCP 资源
     ListMcpResources,
     /// 读取 MCP 资源
-    ReadMcpResource { uri: String },
+    ReadMcpResource {
+        uri: String,
+    },
     /// 列出 MCP 提示
     ListMcpPrompts,
     /// 获取 MCP 提示
@@ -214,7 +237,9 @@ pub enum Op {
         arguments: Option<Value>,
     },
     /// 刷新 MCP 服务器
-    RefreshMcpServers { config: McpServerRefreshConfig },
+    RefreshMcpServers {
+        config: McpServerRefreshConfig,
+    },
     /// 列出自定义提示
     ListCustomPrompts,
     /// 列出技能
@@ -223,9 +248,13 @@ pub enum Op {
         force_reload: bool,
     },
     /// 获取技能内容
-    GetSkill { name: String },
+    GetSkill {
+        name: String,
+    },
     /// 应用技能到当前上下文
-    ApplySkill { name: String },
+    ApplySkill {
+        name: String,
+    },
     /// 读取技能辅助文件
     ReadSkillFile {
         skill_name: String,
@@ -246,5 +275,7 @@ pub enum Op {
     // === 向后兼容标记 ===
     /// [已弃用] 保持向后兼容的旧版本标记
     #[deprecated(note = "Use UserTurn instead")]
-    LegacyUserInput { content: String },
+    LegacyUserInput {
+        content: String,
+    },
 }

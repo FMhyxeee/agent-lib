@@ -17,7 +17,11 @@ impl NetworkTool {
         Self
     }
 
-    async fn execute_with_timeout(&self, args: Value, timeout_secs: u64) -> AgentResult<ToolResult> {
+    async fn execute_with_timeout(
+        &self,
+        args: Value,
+        timeout_secs: u64,
+    ) -> AgentResult<ToolResult> {
         self.execute_with_timeout_and_proxy(args, timeout_secs, false)
             .await
     }
@@ -49,7 +53,8 @@ impl NetworkTool {
             }
         }
 
-        let mut client_builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
+        let mut client_builder =
+            reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs));
         if disable_proxy {
             client_builder = client_builder.no_proxy();
         }
@@ -80,16 +85,13 @@ impl NetworkTool {
             })?;
 
             let status = response.status().as_u16();
-            let text = response
-                .text()
-                .await
-                .map_err(|err| {
-                    if err.is_timeout() {
-                        AgentError::Tool(format!("request timed out after {timeout_secs} seconds"))
-                    } else {
-                        AgentError::Tool(format!("read body failed: {err}"))
-                    }
-                })?;
+            let text = response.text().await.map_err(|err| {
+                if err.is_timeout() {
+                    AgentError::Tool(format!("request timed out after {timeout_secs} seconds"))
+                } else {
+                    AgentError::Tool(format!("read body failed: {err}"))
+                }
+            })?;
 
             Ok::<ToolResult, AgentError>(ToolResult {
                 output: json!({
@@ -195,7 +197,9 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("listener should bind");
-        let addr = listener.local_addr().expect("listener should have local addr");
+        let addr = listener
+            .local_addr()
+            .expect("listener should have local addr");
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener.accept().await {
