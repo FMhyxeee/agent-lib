@@ -312,7 +312,7 @@ impl ModelClient for OpenAiProvider {
                     if delta.is_empty() {
                         None
                     } else {
-                        Some(StreamChunk { delta })
+                        Some(StreamChunk { delta, reasoning_delta: None })
                     }
                 }
                 Err(_) => None,

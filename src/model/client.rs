@@ -71,6 +71,9 @@ impl Default for ModelResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamChunk {
     pub delta: String,
+    /// 推理内容增量 (GLM 思考模式)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_delta: Option<String>,
 }
 
 /// ModelClient - LLM 提供商的核心接口

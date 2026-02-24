@@ -267,7 +267,7 @@ impl ModelClient for GlmProvider {
                                     return;
                                 }
                                 if let Ok(Some(delta)) = parse_delta(payload) {
-                                    let _ = sender.send(StreamChunk { delta }).await;
+                                    let _ = sender.send(StreamChunk { delta, reasoning_delta: None }).await;
                                 }
                             }
                         }

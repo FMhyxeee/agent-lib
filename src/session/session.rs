@@ -813,6 +813,56 @@ async fn session_loop_enhanced(
                         let model_result = timeout(Duration::from_secs(60), sess.chat_model(messages, vec![])).await;
                         match model_result {
                             Ok(Ok(response)) => {
+                                // 修复 P0-1: 将助手消息添加到历史 (包含推理内容)
+                                let assistant_msg = if let Some(ref reasoning) = response.reasoning_content {
+                                    crate::model::Message::assistant_with_reasoning(
+                                        response.content.clone(),
+                                        reasoning.clone(),
+                                    )
+                                } else {
+                                    crate::model::Message::assistant(response.content.clone())
+                                };
+                                sess.push_message(assistant_msg).await;
+
+                                // 如果有推理内容，先发送推理流式事件
+                                if let Some(ref reasoning) = response.reasoning_content {
+                                    if !reasoning.is_empty() {
+                                        let _ = sess
+                                            .emit_event(Event::ReasoningStreaming {
+                                                chunk: reasoning.clone(),
+                                            })
+                                            .await;
+                                    }
+                                }
+
+                                // 分块发送响应 (UTF-8 安全)
+                                let chunk_size = 20;
+                                let mut current_chunk = String::new();
+                                for ch in response.content.chars() {
+                                    current_chunk.push(ch);
+                                    if current_chunk.chars().count() >= chunk_size {
+                                        let _ = sess
+                                            .emit_event(Event::ModelStreaming {
+                                                chunk: current_chunk.clone(),
+                                            })
+                                            .await;
+                                        current_chunk.clear();
+                                    }
+                                }
+                                if !current_chunk.is_empty() {
+                                    let _ = sess
+                                        .emit_event(Event::ModelStreaming {
+                                            chunk: current_chunk,
+                                        })
+                                        .await;
+                                }
+
+                                // 发送完成事件
+                                sess.emit_event(Event::ModelComplete {
+                                    content: response.content.clone(),
+                                    usage: response.usage,
+                                }).await;
+                            }
                                 // 修复 P0-1: 将助手消息添加到历史
                                 sess.push_message(crate::model::Message::assistant(
                                     response.content.clone()

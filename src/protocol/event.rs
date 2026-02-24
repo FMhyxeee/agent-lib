@@ -18,6 +18,11 @@ pub enum Event {
     ModelStreaming {
         chunk: String,
     },
+    /// 推理内容流式输出 (GLM 思考模式)
+    ReasoningStreaming {
+        chunk: String,
+    },
+
     ModelComplete {
         content: String,
         usage: TokenUsage,

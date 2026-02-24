@@ -239,7 +239,7 @@ impl ModelClient for LocalProvider {
                             if let Ok(delta) = parse_stream_delta(&line)
                                 && let Some(text) = delta
                             {
-                                let _ = sender.send(StreamChunk { delta: text }).await;
+                                let _ = sender.send(StreamChunk { delta: text, reasoning_delta: None }).await;
                             }
                         }
                     }

@@ -280,7 +280,7 @@ impl ModelClient for AnthropicProvider {
                                 continue;
                             }
                             if let Some(delta) = parse_stream_delta(&line) {
-                                let _ = sender.send(StreamChunk { delta }).await;
+                                let _ = sender.send(StreamChunk { delta, reasoning_delta: None }).await;
                             }
                         }
                     }

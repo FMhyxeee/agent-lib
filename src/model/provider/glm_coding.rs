@@ -430,8 +430,14 @@ impl ModelClient for GlmCodingPlanProvider {
                                 if payload == "[DONE]" {
                                     return;
                                 }
-                                if let Ok(Some(delta)) = parse_delta(payload) {
-                                    let _ = sender.send(StreamChunk { delta }).await;
+                                if let Ok(Some((content, reasoning_delta))) = parse_delta(payload) {
+                                    // 如果有内容或推理内容，发送chunk
+                                    if content.is_some() || reasoning_delta.is_some() {
+                                        let _ = sender.send(StreamChunk {
+                                            delta: content.unwrap_or_default(),
+                                            reasoning_delta,
+                                        }).await;
+                                    }
                                 }
                             }
                         }
@@ -550,18 +556,21 @@ fn truncate_response(body: &str) -> String {
     }
 }
 
-fn parse_delta(payload: &str) -> AgentResult<Option<String>> {
+fn parse_delta(payload: &str) -> AgentResult<Option<(Option<String>, Option<String>)>> {
     let response: GlmChatResponse = serde_json::from_str(payload)
         .map_err(|err| AgentError::Model(ModelError::InvalidResponse(format!("glm coding plan stream parse failed: {err}"))))?;
-    let delta = response.choices.first().and_then(|choice| {
+    let result = response.choices.first().and_then(|choice| {
         choice
             .delta
             .as_ref()
             .or(choice.message.as_ref())
-            .and_then(|msg| msg.content.clone())
+            .map(|msg| {
+                (msg.content.clone(), msg.reasoning_content.clone())
+            })
     });
-    Ok(delta)
+    Ok(result)
 }
+
 
 #[cfg(test)]
 mod tests {
