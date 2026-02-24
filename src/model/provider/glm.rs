@@ -207,6 +207,7 @@ impl ModelClient for GlmProvider {
             content,
             usage: usage.unwrap_or_default(),
             tool_calls,
+            reasoning_content: None, // 标准 GLM API 暂未实现思考模式
         })
     }
 

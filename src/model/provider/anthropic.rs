@@ -227,6 +227,7 @@ impl ModelClient for AnthropicProvider {
             content,
             usage: usage.unwrap_or_default(),
             tool_calls,
+            reasoning_content: None, // Anthropic 暂不支持思考模式
         })
     }
 

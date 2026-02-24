@@ -48,6 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         content: "你好,请用一句话介绍Rust语言。".to_string(),
         tool_call_id: None,
         tool_calls: None,
+        reasoning_content: None,
     }];
 
     match standard_provider.chat(messages.clone(), vec![]).await {

@@ -35,12 +35,36 @@ pub struct ModelResponse {
     pub usage: TokenUsage,
     /// 工具调用列表 (如果有)
     pub tool_calls: Vec<ToolCall>,
+    /// 推理内容 (GLM 思考模式)
+    ///
+    /// 包含模型在生成响应过程中的思考内容。
+    /// 用于保留式思考(Preserved Thinking),需要在下一轮对话中返回给模型。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 impl ModelResponse {
     /// 检查是否有工具调用
     pub fn has_tool_calls(&self) -> bool {
         !self.tool_calls.is_empty()
+    }
+
+    /// 检查是否有推理内容
+    pub fn has_reasoning_content(&self) -> bool {
+        self.reasoning_content
+            .as_ref()
+            .is_some_and(|s| !s.is_empty())
+    }
+}
+
+impl Default for ModelResponse {
+    fn default() -> Self {
+        Self {
+            content: String::new(),
+            usage: TokenUsage::default(),
+            tool_calls: Vec::new(),
+            reasoning_content: None,
+        }
     }
 }
 
@@ -63,10 +87,12 @@ pub struct StreamChunk {
 ///
 /// # 示例
 ///
-/// ```rust,ignore
-/// use agent_lib::model::{ModelClient, Message, ModelResponse, ToolDef};
+/// ```rust
+/// use agent_lib::model::{ModelClient, Message, ModelResponse, TokenUsage};
+/// use agent_lib::tools::ToolDef;
 /// use agent_lib::error::AgentResult;
-/// use futures::stream;
+/// use std::pin::Pin;
+/// use futures::Stream;
 ///
 /// struct MyProvider;
 ///
@@ -78,12 +104,13 @@ pub struct StreamChunk {
 ///             content: "Hello!".to_string(),
 ///             usage: TokenUsage::default(),
 ///             tool_calls: vec![],
+///             reasoning_content: None,
 ///         })
 ///     }
 ///
-///     async fn chat_stream(&self, messages: Vec<Message>, tools: Vec<ToolDef>) -> AgentResult<Stream> {
+///     async fn chat_stream(&self, messages: Vec<Message>, tools: Vec<ToolDef>) -> AgentResult<Pin<Box<dyn Stream<Item = agent_lib::model::StreamChunk> + Send>>> {
 ///         // 实现流式响应
-///         Ok(Box::pin(stream::empty()))
+///         Ok(Box::pin(futures::stream::empty()))
 ///     }
 /// }
 /// ```
@@ -103,9 +130,33 @@ pub trait ModelClient: Send + Sync {
     ///
     /// # 示例
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use agent_lib::model::{ModelClient, Message, TokenUsage};
+    /// # use agent_lib::tools::ToolDef;
+    /// # use agent_lib::error::AgentResult;
+    /// # struct MockModel;
+    /// # #[async_trait::async_trait] impl ModelClient for MockModel {
+    /// #     async fn chat(&self, _: Vec<Message>, _: Vec<ToolDef>) -> AgentResult<agent_lib::model::ModelResponse> {
+    /// #         Ok(agent_lib::model::ModelResponse {
+    /// #             content: "Hello!".to_string(),
+    /// #             usage: TokenUsage::default(),
+    /// #             tool_calls: vec![],
+    /// #             reasoning_content: None,
+    /// #         })
+    /// #     }
+    /// #     async fn chat_stream(&self, _: Vec<Message>, _: Vec<ToolDef>) -> AgentResult<std::pin::Pin<Box<dyn futures::Stream<Item = agent_lib::model::StreamChunk> + Send>>> {
+    /// #         Ok(Box::pin(futures::stream::empty()))
+    /// #     }
+    /// # }
+    /// # #[tokio::main]
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let model = MockModel;
+    /// # let messages = vec![];
+    /// # let tools = vec![];
     /// let response = model.chat(messages, tools).await?;
     /// println!("Model said: {}", response.content);
+    /// # Ok(())
+    /// # }
     /// ```
     async fn chat(&self, messages: Vec<Message>, tools: Vec<ToolDef>)
     -> AgentResult<ModelResponse>;
@@ -131,11 +182,36 @@ pub trait ModelClient: Send + Sync {
     ///
     /// # 示例
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// # use agent_lib::model::{ModelClient, Message, StreamChunk};
+    /// # use agent_lib::tools::ToolDef;
+    /// # use agent_lib::error::AgentResult;
+    /// # use futures::StreamExt;
+    /// # struct MockModel;
+    /// # #[async_trait::async_trait] impl ModelClient for MockModel {
+    /// #     async fn chat(&self, _: Vec<Message>, _: Vec<ToolDef>) -> AgentResult<agent_lib::model::ModelResponse> {
+    /// #         Ok(agent_lib::model::ModelResponse {
+    /// #             content: "Hello!".to_string(),
+    /// #             usage: agent_lib::model::TokenUsage::default(),
+    /// #             tool_calls: vec![],
+    /// #             reasoning_content: None,
+    /// #         })
+    /// #     }
+    /// #     async fn chat_stream(&self, _: Vec<Message>, _: Vec<ToolDef>) -> AgentResult<std::pin::Pin<Box<dyn futures::Stream<Item = StreamChunk> + Send>>> {
+    /// #         Ok(Box::pin(futures::stream::once(async move { StreamChunk { delta: "test".to_string() } })))
+    /// #     }
+    /// # }
+    /// # #[tokio::main]
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let model = MockModel;
+    /// # let messages = vec![];
+    /// # let tools = vec![];
     /// let mut stream = model.chat_stream(messages, tools).await?;
     /// while let Some(chunk) = stream.next().await {
     ///     print!("{}", chunk.delta);
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     async fn chat_stream(
         &self,

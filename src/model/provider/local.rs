@@ -188,6 +188,7 @@ impl ModelClient for LocalProvider {
             content,
             usage: TokenUsage::default(),
             tool_calls,
+            reasoning_content: None, // Local 暂不支持思考模式
         })
     }
 

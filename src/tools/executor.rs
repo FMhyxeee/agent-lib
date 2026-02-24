@@ -19,16 +19,24 @@ use crate::tools::{
 ///
 /// # 示例
 ///
-/// ```rust,ignore
-/// use agent_lib::tools::{ToolExecutor, ToolRegistry, ApprovalHook};
-/// use std::sync::Arc;
+/// ```rust
+/// use agent_lib::tools::{ToolExecutor, ToolRegistry, ToolContext};
+/// use serde_json::json;
 ///
-/// let executor = ToolExecutor::new(registry)
-///     .with_approval_hook(Arc::new(MyApprovalHook))
-///     .with_allowlist(vec!["read_file".to_string(), "write_file".to_string()])
-///     .with_denylist(vec!["dangerous_tool".to_string()]);
+/// # #[tokio::main]
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let registry = ToolRegistry::new();
+/// let executor = ToolExecutor::new(registry);
+/// let ctx = ToolContext::default();
 ///
-/// let result = executor.execute("read_file", json!({"path": "/tmp/file.txt"}), &ctx).await?;
+/// // 假设注册了 read_file 工具
+/// let result = executor.execute(
+///     "read_file",
+///     json!({"path": "/tmp/file.txt"}),
+///     &ctx
+/// ).await?;
+/// # Ok(())
+/// # }
 /// ```
 pub struct ToolExecutor {
     registry: ToolRegistry,

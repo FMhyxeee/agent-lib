@@ -17,6 +17,12 @@ pub struct Message {
     pub tool_call_id: Option<String>,
     /// 工具调用列表 (仅 Assistant 角色使用)
     pub tool_calls: Option<Vec<ToolCallMessage>>,
+    /// 推理内容 (GLM 思考模式)
+    ///
+    /// 用于保存模型在响应过程中的思考内容,支持保留式思考(Preserved Thinking)。
+    /// 在多轮对话中,需要将之前的 reasoning_content 返回给模型以保持推理连贯性。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 /// 消息中的工具调用
@@ -34,6 +40,7 @@ impl Message {
             content: content.into(),
             tool_call_id: None,
             tool_calls: None,
+            reasoning_content: None,
         }
     }
 
@@ -43,6 +50,7 @@ impl Message {
             content: content.into(),
             tool_call_id: None,
             tool_calls: None,
+            reasoning_content: None,
         }
     }
 
@@ -52,6 +60,7 @@ impl Message {
             content: content.into(),
             tool_call_id: None,
             tool_calls: None,
+            reasoning_content: None,
         }
     }
 
@@ -64,6 +73,36 @@ impl Message {
             content: content.into(),
             tool_call_id: None,
             tool_calls: Some(tool_calls),
+            reasoning_content: None,
+        }
+    }
+
+    /// 创建带有推理内容的助手消息
+    pub fn assistant_with_reasoning(
+        content: impl Into<String>,
+        reasoning_content: impl Into<String>,
+    ) -> Self {
+        Self {
+            role: MessageRole::Assistant,
+            content: content.into(),
+            tool_call_id: None,
+            tool_calls: None,
+            reasoning_content: Some(reasoning_content.into()),
+        }
+    }
+
+    /// 创建带有推理内容和工具调用的助手消息
+    pub fn assistant_with_calls_and_reasoning(
+        content: impl Into<String>,
+        tool_calls: Vec<ToolCallMessage>,
+        reasoning_content: impl Into<String>,
+    ) -> Self {
+        Self {
+            role: MessageRole::Assistant,
+            content: content.into(),
+            tool_call_id: None,
+            tool_calls: Some(tool_calls),
+            reasoning_content: Some(reasoning_content.into()),
         }
     }
 
@@ -74,6 +113,7 @@ impl Message {
             content: result.into(),
             tool_call_id: Some(tool_call_id.into()),
             tool_calls: None,
+            reasoning_content: None,
         }
     }
 

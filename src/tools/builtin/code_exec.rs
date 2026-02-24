@@ -258,7 +258,19 @@ mod tests {
             .get("stdout")
             .and_then(|value| value.as_str())
             .unwrap_or_default();
-        assert!(stdout.contains(temp_dir.to_string_lossy().as_ref()));
+
+        // Windows 可能使用短文件名 (8.3 filename),所以我们需要规范化路径
+        // 或者只检查路径的核心部分(即 temp 目录名)
+        let temp_dir_name = temp_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+
+        assert!(stdout.contains(temp_dir_name),
+            "stdout should contain temp_dir name.\nExpected name: {}\nGot: {}",
+            temp_dir_name,
+            stdout
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

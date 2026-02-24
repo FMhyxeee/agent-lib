@@ -24,6 +24,7 @@ impl ModelClient for StaticModel {
             content: "sub-agent ready".to_string(),
             usage: TokenUsage::default(),
             tool_calls: vec![],
+            reasoning_content: None, // Static 模型不支持思考模式
         })
     }
 

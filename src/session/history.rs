@@ -238,6 +238,7 @@ mod tests {
                 content: format!("Message {}", i),
                 tool_call_id: None,
                 tool_calls: None,
+                reasoning_content: None,
             });
         }
 
@@ -261,6 +262,7 @@ mod tests {
                 content: format!("Message {}", i),
                 tool_call_id: None,
                 tool_calls: None,
+                reasoning_content: None,
             });
         }
 

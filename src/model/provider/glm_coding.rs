@@ -10,6 +10,7 @@
 //! ```rust,no_run
 //! use agent_lib::model::provider::GlmCodingPlanProvider;
 //! use agent_lib::model::ModelClient;
+//! use agent_lib::model::Message;
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
@@ -18,12 +19,7 @@
 //!     let provider = GlmCodingPlanProvider::new("glm-4.7", api_key);
 //!
 //!     let response = provider.chat(vec![
-//!         agent_lib::model::Message {
-//!             role: agent_lib::model::MessageRole::User,
-//!             content: "Hello, how are you?".to_string(),
-//!             tool_call_id: None,
-//!             tool_calls: None,
-//!         }
+//!         Message::user("Hello, how are you?")
 //!     ], vec![]).await?;
 //!
 //!     println!("{}", response.content);
@@ -58,6 +54,26 @@ pub struct GlmCodingPlanProvider {
     pub model: String,
     pub api_key: String,
     pub base_url: String,
+    /// 思考模式配置
+    thinking_config: ThinkingConfig,
+}
+
+/// 思考模式配置
+#[derive(Debug, Clone, Copy)]
+struct ThinkingConfig {
+    /// 是否启用思考模式
+    enabled: bool,
+    /// 是否保留思考内容 (false = 保留式思考)
+    clear_thinking: bool,
+}
+
+impl Default for ThinkingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,      // GLM-5/4.7 默认开启
+            clear_thinking: false, // 默认保留思考内容
+        }
+    }
 }
 
 impl GlmCodingPlanProvider {
@@ -78,6 +94,7 @@ impl GlmCodingPlanProvider {
             model: model.into(),
             api_key: api_key.into(),
             base_url: "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions".to_string(),
+            thinking_config: ThinkingConfig::default(),
         }
     }
 
@@ -94,6 +111,41 @@ impl GlmCodingPlanProvider {
         self.base_url = base_url.into();
         self
     }
+
+    /// 设置思考模式
+    ///
+    /// # Arguments
+    /// - `enabled`: 是否启用思考模式 (true=启用, false=禁用)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use agent_lib::model::provider::GlmCodingPlanProvider;
+    ///
+    /// let provider = GlmCodingPlanProvider::new("glm-4.7", "your-api-key")
+    ///     .with_thinking_enabled(true);
+    /// ```
+    pub fn with_thinking_enabled(mut self, enabled: bool) -> Self {
+        self.thinking_config.enabled = enabled;
+        self
+    }
+
+    /// 设置保留式思考模式
+    ///
+    /// # Arguments
+    /// - `clear_thinking`: 是否清空思考内容 (false=保留式思考, true=清空)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use agent_lib::model::provider::GlmCodingPlanProvider;
+    ///
+    /// // 启用保留式思考 (保留历史推理内容)
+    /// let provider = GlmCodingPlanProvider::new("glm-4.7", "your-api-key")
+    ///     .with_preserved_thinking(false);
+    /// ```
+    pub fn with_preserved_thinking(mut self, clear_thinking: bool) -> Self {
+        self.thinking_config.clear_thinking = clear_thinking;
+        self
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -104,6 +156,18 @@ struct GlmChatRequest {
     tools: Option<Vec<GlmTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    /// 思考模式配置
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<GlmThinking>,
+}
+
+/// GLM 思考模式参数
+#[derive(Debug, Serialize)]
+struct GlmThinking {
+    #[serde(rename = "type")]
+    thinking_type: &'static str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    clear_thinking: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -116,6 +180,9 @@ struct GlmMessage {
     /// 工具调用列表 (仅 assistant 角色使用)
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<GlmToolCallRequest>>,
+    /// 推理内容 (GLM 思考模式)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<String>,
 }
 
 /// 请求时使用的工具调用格式
@@ -165,6 +232,9 @@ struct GlmMessageResponse {
     content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<GlmToolCall>>,
+    /// 推理内容 (GLM 思考模式)
+    #[serde(default)]
+    reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,11 +264,26 @@ impl ModelClient for GlmCodingPlanProvider {
         tools: Vec<ToolDef>,
     ) -> AgentResult<ModelResponse> {
         let client = reqwest::Client::new();
+
+        // 构建 thinking 参数
+        let thinking = if self.thinking_config.enabled {
+            Some(GlmThinking {
+                thinking_type: "enabled",
+                clear_thinking: self.thinking_config.clear_thinking,
+            })
+        } else {
+            Some(GlmThinking {
+                thinking_type: "disabled",
+                clear_thinking: true,
+            })
+        };
+
         let request = GlmChatRequest {
             model: self.model.clone(),
             messages: messages.into_iter().map(map_message).collect(),
             tools: map_tools(tools),
             stream: None,
+            thinking,
         };
 
         let response = client
@@ -237,6 +322,10 @@ impl ModelClient for GlmCodingPlanProvider {
             .and_then(|msg| msg.content.clone())
             .unwrap_or_default();
 
+        // 提取推理内容
+        let reasoning_content = message
+            .and_then(|msg| msg.reasoning_content.clone());
+
         // 解析工具调用
         let tool_calls = message
             .and_then(|msg| msg.tool_calls.as_ref())
@@ -267,6 +356,7 @@ impl ModelClient for GlmCodingPlanProvider {
             content,
             usage: usage.unwrap_or_default(),
             tool_calls,
+            reasoning_content,
         })
     }
 
@@ -276,11 +366,26 @@ impl ModelClient for GlmCodingPlanProvider {
         tools: Vec<ToolDef>,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>> {
         let client = reqwest::Client::new();
+
+        // 构建 thinking 参数
+        let thinking = if self.thinking_config.enabled {
+            Some(GlmThinking {
+                thinking_type: "enabled",
+                clear_thinking: self.thinking_config.clear_thinking,
+            })
+        } else {
+            Some(GlmThinking {
+                thinking_type: "disabled",
+                clear_thinking: true,
+            })
+        };
+
         let request = GlmChatRequest {
             model: self.model.clone(),
             messages: messages.into_iter().map(map_message).collect(),
             tools: map_tools(tools),
             stream: Some(true),
+            thinking,
         };
 
         let response = client
@@ -356,6 +461,7 @@ fn map_message(message: Message) -> GlmMessage {
                 content: message.content,
                 tool_call_id: message.tool_call_id,
                 tool_calls: None,
+                reasoning_content: None, // Tool 消息不包含 reasoning_content
             }
         }
         MessageRole::Assistant => {
@@ -380,6 +486,7 @@ fn map_message(message: Message) -> GlmMessage {
                     content: message.content,
                     tool_call_id: None,
                     tool_calls: Some(request_tool_calls),
+                    reasoning_content: message.reasoning_content, // 保留推理内容
                 }
             } else {
                 // 普通助手消息
@@ -388,6 +495,7 @@ fn map_message(message: Message) -> GlmMessage {
                     content: message.content,
                     tool_call_id: None,
                     tool_calls: None,
+                    reasoning_content: message.reasoning_content, // 保留推理内容
                 }
             }
         }
@@ -398,6 +506,7 @@ fn map_message(message: Message) -> GlmMessage {
                 content: message.content,
                 tool_call_id: None,
                 tool_calls: None,
+                reasoning_content: None, // System/User 消息不包含 reasoning_content
             }
         }
     }

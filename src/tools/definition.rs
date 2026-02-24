@@ -17,6 +17,15 @@ pub struct ToolContext {
     pub sandbox_root: Option<String>,
 }
 
+impl Default for ToolContext {
+    fn default() -> Self {
+        Self {
+            cwd: None,
+            sandbox_root: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolResult {
     pub output: Value,

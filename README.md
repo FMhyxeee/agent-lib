@@ -123,6 +123,18 @@ Control filesystem access:
 
 `FileSystemTool` also honors `ToolContext.sandbox_root` to prevent path escapes.
 
+## Chat Streaming Example
+
+Run the minimal `ModelClient::chat_stream` example:
+
+```bash
+cargo run --example chat_stream
+```
+
+Environment:
+- `OPENAI_API_KEY` (required)
+- `OPENAI_MODEL` (optional, default: `gpt-4o-mini`)
+
 ## Tool call example
 
 Create `dump.txt`, write `hello`, then delete it using the filesystem tool:

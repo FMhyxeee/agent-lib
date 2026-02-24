@@ -35,12 +35,14 @@ impl ModelClient for MockModel {
                     name: "echo".to_string(),
                     arguments: json!({"text": "ping"}),
                 }],
+                reasoning_content: None, // Mock 模型不支持思考模式
             })
         } else {
             Ok(ModelResponse {
                 content: "final answer".to_string(),
                 usage: TokenUsage::default(),
                 tool_calls: Vec::new(),
+                reasoning_content: None, // Mock 模型不支持思考模式
             })
         }
     }

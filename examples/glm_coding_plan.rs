@@ -37,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         content: "你好!请用一句话介绍Rust编程语言的特点。".to_string(),
         tool_call_id: None,
         tool_calls: None,
+        reasoning_content: None,
     }];
 
     match provider.chat(messages, vec![]).await {
@@ -66,6 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         content: "请写一首关于AI编程的简短诗歌,不超过50字。".to_string(),
         tool_call_id: None,
         tool_calls: None,
+        reasoning_content: None,
     }];
 
     match provider.chat_stream(messages, vec![]).await {

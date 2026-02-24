@@ -29,6 +29,7 @@ impl ModelClient for MockModel {
             content: "mock-response".to_string(),
             usage: TokenUsage::default(),
             tool_calls: Vec::new(),
+            reasoning_content: None, // Mock 模型不支持思考模式
         })
     }
 
